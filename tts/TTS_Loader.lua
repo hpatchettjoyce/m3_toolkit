@@ -59,7 +59,7 @@ ZONE_LAYOUT_DELAY = 0.3
 -- if the zone is too narrow or shallow for these values.
 BOARD_CENTRE        = { x = 0, z = 0 } -- The map is centred on the table origin (see MAP_START_POS)
 CARD_COLUMN_SPACING = 2.6   -- Distance between card centres along a row
-CARD_ROW_SPACING    = 3.6   -- Distance between row centres
+CARD_ROW_SPACING    = 4.5   -- Distance between row centres; leaves a gap below row 1 for the copy numeral plates
 CARD_LIFT           = 0.2   -- Cards spawn this far above the surface under their slot
 MODEL_LIFT          = 0.4   -- Models spawn this far above their card
 CARD_YAW_OFFSET     = 0     -- Set to 180 if the cards come out upside down for the player
@@ -67,12 +67,13 @@ MODEL_SPACING       = 1.8   -- Distance between copies of one model; they spread
 MODEL_SPREAD_MAX    = 2.4   -- Copies never spread further than this, so they stay on the card
 
 -- A familiar taken more than once gets a card per copy, each with one model, numbered I, II, III on
--- both so a card can track its own model. The card's numeral plate lies on the card near its bottom
--- edge, where row 2 (talismans) can't cover it; the card text under it is only readable on hover anyway.
+-- both so a card can track its own model. The card's numeral plate floats just past the card's bottom
+-- edge, in the gap CARD_ROW_SPACING leaves before row 2. (A plate on the card covered its text in the
+-- ALT zoom, which shows object UI too.)
 ROMAN_NUMERALS        = { "I", "II", "III" }
-CARD_NUMERAL_SIDE     = 1         -- Which end of the card the plate sits at: 1 is the bottom, the player's end (seen in TTS, 2026-10-21)
-CARD_NUMERAL_GAP      = 12        -- Gap between the card's bottom edge and the plate, in UI units (100 per unit of card length)
-CARD_NUMERAL_LIFT     = 20        -- Height of the plate above the card's face, in the same units (the card's own thickness is added)
+CARD_NUMERAL_SIDE     = 1         -- Which end of the card the plate sits past: 1 is the bottom, the player's end (seen in TTS, 2026-10-21)
+CARD_NUMERAL_GAP      = 10        -- Gap between the card's bottom edge and the plate, in UI units (100 per unit of card length)
+CARD_NUMERAL_LIFT     = 10        -- Height of the plate above the card's centre, in the same units
 CARD_NUMERAL_FILL     = "#041212" -- OFF-BLACK, from the M3 Branding Guide
 CARD_NUMERAL_OUTLINE  = "#374141" -- The guide's grey accent
 CARD_NUMERAL_COLOUR   = "#e4a557" -- GOLD STONE
@@ -668,7 +669,10 @@ function cloneCardFromDeck(deck, cardName, cardId, targetPos, targetRot, playerC
                     end
                 end, 2)
             end
-            if not toHand then trackSpawned(playerColor, clonedObj) end -- hand cards are cleared with the hand
+            if not toHand then
+                trackSpawned(playerColor, clonedObj) -- hand cards are cleared with the hand
+                lockWhenSettled(clonedObj)
+            end
             clonedObj.use_grid = false -- cards stay where they are put, off the table grid
             -- Release coroutine immediately for single cards
             isCloning = false
@@ -706,7 +710,10 @@ function cloneCardFromDeck(deck, cardName, cardId, targetPos, targetRot, playerC
                     local clonedObj = copyObject(cardObj, {x = targetPos.x, y = targetPos.y, z = targetPos.z}, targetRot,
                         numeral and function(data) data.XmlUI = cardNumeralXml(cardObj, numeral) end)
                     
-                    if not toHand then trackSpawned(playerColor, clonedObj) end -- hand cards are cleared with the hand
+                    if not toHand then
+                        trackSpawned(playerColor, clonedObj) -- hand cards are cleared with the hand
+                        lockWhenSettled(clonedObj)
+                    end
                     clonedObj.use_grid = false -- cards stay where they are put, off the table grid
 
                     -- Deal the clone into the player's Hand after a small frame delay, unless it was placed in a zone
@@ -937,25 +944,29 @@ function copyObject(obj, position, rotation, edit)
     return spawnObjectData({ data = data, position = position, rotation = rotation })
 end
 
--- The XML for a card's numeral plate, lying on the card near its bottom edge. The card's length comes
--- from its bounds, so the plate stays on the card whatever the deck's card size.
+-- The XML for a card's numeral plate, floating just past the card's bottom edge. The card's length
+-- comes from its bounds, so the plate clears the edge whatever the deck's card size.
 function cardNumeralXml(card, numeral)
-    local bounds, scale = card.getBoundsNormalized(), card.getScale()
-    local length = bounds.size.z / scale.z -- in the card's own units
-    -- Measured from the card's centre, so clear half its thickness or the plate is hidden inside it
-    local lift = math.floor(bounds.size.y / scale.y * 50 + CARD_NUMERAL_LIFT + 0.5)
-    local offset = math.floor(CARD_NUMERAL_SIDE * (length * 50 - CARD_NUMERAL_HEIGHT / 2 - CARD_NUMERAL_GAP) + 0.5)
-    -- One plate each side of the card: it isn't certain which way a card's UI counts as up (a plate
-    -- sitting just above the card's centre never showed), and the one under the face is hidden by
-    -- the card. I, II and III read the same mirrored or turned, so either plate reads correctly.
-    local function plate(z, rotation)
-        return string.format([[
-<Panel width="%d" height="%d" position="0 %d %d" rotation="%s" color="%s" outline="%s" outlineSize="2">
+    local length = card.getBoundsNormalized().size.z / card.getScale().z -- in the card's own units
+    local offset = math.floor(CARD_NUMERAL_SIDE * (length * 50 + CARD_NUMERAL_HEIGHT / 2 + CARD_NUMERAL_GAP) + 0.5)
+    return string.format([[
+<Panel width="%d" height="%d" position="0 %d -%d" rotation="0 0 180" color="%s" outline="%s" outlineSize="2">
     <Text fontStyle="Bold" fontSize="40" color="%s" alignment="MiddleCenter">%s</Text>
-</Panel>]], CARD_NUMERAL_WIDTH, CARD_NUMERAL_HEIGHT, offset, z, rotation,
-            CARD_NUMERAL_FILL, CARD_NUMERAL_OUTLINE, CARD_NUMERAL_COLOUR, numeral)
+</Panel>]], CARD_NUMERAL_WIDTH, CARD_NUMERAL_HEIGHT, offset, CARD_NUMERAL_LIFT,
+        CARD_NUMERAL_FILL, CARD_NUMERAL_OUTLINE, CARD_NUMERAL_COLOUR, numeral)
+end
+
+-- Locks a card placed on the table once it has landed, so it can't be knocked or dragged out of its
+-- slot. Players can still unlock one by hand (right-click > Toggle Lock). Locking at spawn would
+-- freeze it in the air above its slot.
+function lockWhenSettled(obj)
+    local function lock()
+        if obj ~= nil and not obj.isDestroyed() then obj.setLock(true) end
     end
-    return plate(-lift, "0 0 180") .. "\n" .. plate(lift, "0 180 180")
+    -- Give it a moment to start falling first: a card that has only just spawned can count as resting
+    Wait.time(function()
+        Wait.condition(lock, function() return obj == nil or obj.isDestroyed() or obj.resting end, 3, lock)
+    end, 0.5)
 end
 
 -- Get central physical spawn position for models
