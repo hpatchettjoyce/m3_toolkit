@@ -11,6 +11,10 @@
      
      That's it! The script will automatically generate the 3D floating UI,
      manage its placement, and handle its visibility when flipped.
+
+     COPY NUMERALS: when a cast takes more than one copy of a familiar, the TTS Loader spawns each
+     copy with a Roman numeral (I, II, III) in its saved state, matching the numeral on its card.
+     The numeral shows on a plate centred above the health panel. Single copies have none.
 --]]
 
 -- ============================================================================
@@ -61,7 +65,13 @@ STANDEE_CONFIG = {
     height       = "100"            -- Resolution height
 }
 
--- 3. NOTIFICATION PREFERENCES
+-- 3. COPY NUMERAL PLATE (centred above the health panel; only shown when the model has a numeral)
+NUMERAL_PLATE_WIDTH  = 110
+NUMERAL_PLATE_HEIGHT = 64
+NUMERAL_PLATE_GAP    = 8      -- Space between the plate and the top of the health panel
+NUMERAL_COLOUR       = "#e4a557" -- GOLD STONE from the brand palette
+
+-- 4. NOTIFICATION PREFERENCES
 ENABLE_CHAT_NOTIFICATIONS = true    -- Set to true to broadcast health changes in the global game chat
 
 
@@ -74,16 +84,23 @@ isUIVisible = true                  -- Tracking current visibility state of the 
 checkTimerID = nil                  -- Internal timer ID for motion checks
 isTileObject = false                -- Cached classification of this object's shape (Tile vs Standee)
 isMinion = false                    -- Cached classification of this object's card class
+copyNumeral = ""                    -- "I", "II" or "III" when this is one of several copies, set by the TTS Loader
 
 
 -- =============== CORE EVENT HOOKS ===============
 
-function onLoad()
+function onLoad(saved_data)
     -- Classify object shape and card class
     classifyObject()
 
-    -- Sync health to the appropriate default for this object
-    currentHealth = resolveDefaultHealth()
+    -- Restore saved health and copy numeral, or start at the default health for this object
+    local saved = {}
+    if saved_data and saved_data ~= "" then
+        local ok, decoded = pcall(JSON.decode, saved_data)
+        if ok and type(decoded) == "table" then saved = decoded end
+    end
+    currentHealth = tonumber(saved.health) or resolveDefaultHealth()
+    copyNumeral = saved.numeral or ""
 
     -- Dynamically generate and inject the XML UI
     setupXmlUi()
@@ -95,6 +112,11 @@ function onLoad()
     startCheckingVisibility()
     
     logMessage("Floating Health Tracker loaded on " .. (self.getName() ~= "" and self.getName() or "Object") .. ".")
+end
+
+-- Keeps health and the copy numeral through a save and reload
+function onSave()
+    return JSON.encode({ health = currentHealth, numeral = copyNumeral })
 end
 
 -- Triggers when a player rotates or flips this object
@@ -188,6 +210,19 @@ function setupXmlUi()
         <!-- Plus Button -->
         <Button class="health-btn" onClick="incrementHealth" fontSize="36" color="#27ae60" width="60" height="60">+</Button>
     </HorizontalLayout>
+
+    <!-- Copy numeral plate, centred above the panel (the panel's padding is added back so it clears the edge) -->
+    <Panel id="copyNumeralPlate"
+           width="%d"
+           height="%d"
+           rectAlignment="UpperCenter"
+           offsetXY="0 %d"
+           color="#111c24e6"
+           outline="#2c3e50"
+           outlineSize="2"
+           active="%s">
+        <Text id="copyNumeralText" class="health-val" fontSize="40" color="%s">%s</Text>
+    </Panel>
 </Panel>
 ]], 
     config.width, 
@@ -196,7 +231,13 @@ function setupXmlUi()
     config.rotation, 
     config.scale,
     initialActiveState,
-    currentHealth
+    currentHealth,
+    NUMERAL_PLATE_WIDTH,
+    NUMERAL_PLATE_HEIGHT,
+    NUMERAL_PLATE_HEIGHT + NUMERAL_PLATE_GAP + 10,
+    (copyNumeral ~= "") and "true" or "false",
+    NUMERAL_COLOUR,
+    copyNumeral
     )
 
     -- Inject XML into the object's UI component
@@ -293,6 +334,7 @@ function notifyHealthChange(player, oldVal, newVal)
     local playerColor = stringColorToHex(player.color)
     local objName = self.getName()
     if objName == "" then objName = "Object" end
+    if copyNumeral ~= "" then objName = objName .. " " .. copyNumeral end
     
     broadcastToAll(string.format("[%s]%s[-] adjusted %s health: %d -> %d", 
         playerColor, playerName, objName, oldVal, newVal), {0.9, 0.9, 0.9})

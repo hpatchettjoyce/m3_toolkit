@@ -66,6 +66,16 @@ CARD_YAW_OFFSET     = 0     -- Set to 180 if the cards come out upside down for 
 MODEL_SPACING       = 1.8   -- Distance between copies of one model; they spread along their card
 MODEL_SPREAD_MAX    = 2.4   -- Copies never spread further than this, so they stay on the card
 
+-- A familiar taken more than once gets a card per copy, each with one model, numbered I, II, III on
+-- both so a card can track its own model. The card's numeral plate floats just past one end of it.
+ROMAN_NUMERALS        = { "I", "II", "III" }
+CARD_NUMERAL_SIDE     = 1         -- Which end of the card the plate sits past: 1 or -1 (flip it if the plate lands at the player's end)
+CARD_NUMERAL_GAP      = 10        -- Gap between the card's edge and the plate, in UI units (100 per unit of card length)
+CARD_NUMERAL_LIFT     = 10        -- Height of the plate above the card's face, in the same units
+CARD_NUMERAL_ROTATION = "0 0 180" -- Flat on the card, as the health tracker lies on a tile; try "0 0 0" if the numeral reads upside down
+CARD_NUMERAL_WIDTH    = 110       -- Same size as the numeral plate above each model's health tracker
+CARD_NUMERAL_HEIGHT   = 64
+
 -- =============== ONBOARDING SCENARIOS CONFIGURATION ===============
 -- Pre-configured cast lists for the learning scenarios (Task 5).
 -- You can modify these lists of IDs to customize the onboarding scenarios.
@@ -405,28 +415,38 @@ function loadCastCoroutine()
     local hasAutoMinion = (castData.dominion == "Iro-Si-Khar" or castData.dominion == "Ahèserec") and not isReducedScenario
 
     -- Plan the cast zone grid: one column per character card in row 1 (champion, familiars, auto-summon
-    -- minion). Row 2 holds what belongs to a row-1 character: loyal companions behind their champion,
-    -- then each talisman behind the character it is attached to.
+    -- minion). A familiar taken more than once gets a column per copy, numbered I, II, III. Row 2 holds
+    -- what belongs to a row-1 character: loyal companions behind their champion, then each talisman
+    -- behind the first copy of its character that has none yet (a character carries one talisman).
+    local minionId = (castData.dominion == "Iro-Si-Khar") and "02IRO-04MIN-0048" or "05AHE-04MIN-0148"
     local unitIds = {}
     for unitId, _ in pairs(castData.unitIdsRecruited or {}) do table.insert(unitIds, unitId) end
     table.sort(unitIds) -- pairs() order is not stable; ID order groups each class together
 
     local champInRowOne = castData.championId and castData.championId ~= "" and not isReducedScenario
-    local rowOneIds, rowTwoEntries = {}, {}
-    if champInRowOne then table.insert(rowOneIds, castData.championId) end
+    local rowOne, rowTwoEntries = {}, {} -- rowOne: one { id, numeral } per card, left to right
+    if champInRowOne then table.insert(rowOne, { id = castData.championId }) end
     for _, unitId in ipairs(unitIds) do
+        local qty = castData.unitIdsRecruited[unitId] or 0
         -- Loyal companions (class code 02COM in the ID) sit behind their champion, like a talisman for them
         if champInRowOne and unitId:find("%-02COM%-") then
             table.insert(rowTwoEntries, { id = unitId, attachedId = castData.championId })
+        elseif qty > 1 then
+            for copy = 1, qty do
+                table.insert(rowOne, { id = unitId, numeral = ROMAN_NUMERALS[copy] or tostring(copy) })
+            end
         else
-            table.insert(rowOneIds, unitId)
+            table.insert(rowOne, { id = unitId })
         end
     end
     if hasAutoMinion then
-        table.insert(rowOneIds, (castData.dominion == "Iro-Si-Khar") and "02IRO-04MIN-0048" or "05AHE-04MIN-0148")
+        table.insert(rowOne, { id = minionId })
     end
-    local columnOf = {}
-    for i, id in ipairs(rowOneIds) do columnOf[id] = i end
+    local columnsOf = {} -- every row-1 column a card ID fills, copy I first
+    for column, card in ipairs(rowOne) do
+        columnsOf[card.id] = columnsOf[card.id] or {}
+        table.insert(columnsOf[card.id], column)
+    end
 
     local talIds = {}
     for talId, _ in pairs(castData.talismanIdsEquipped or {}) do table.insert(talIds, talId) end
@@ -436,11 +456,13 @@ function loadCastCoroutine()
         table.insert(rowTwoEntries, { id = talId, attachedId = attachment:match("Attached to:%s*(.-)%s*$"), isTalisman = true })
     end
 
-    local rowTwoPlacements, columnCount = planRowTwoColumns(rowTwoEntries, columnOf, #rowOneIds)
+    local rowTwoPlacements, columnCount = planRowTwoColumns(rowTwoEntries, columnsOf, #rowOne)
 
-    -- Every card's slot, so a unit's card and models go to the same place whichever row it is in
+    -- The slot of each card that is not one of several copies, so its models land on it whichever row it is in
     local slotOf = {}
-    for id, column in pairs(columnOf) do slotOf[id] = { row = 1, column = column } end
+    for column, card in ipairs(rowOne) do
+        if not card.numeral then slotOf[card.id] = { row = 1, column = column } end
+    end
     for _, p in ipairs(rowTwoPlacements) do slotOf[p.id] = { row = 2, column = p.column } end
 
     local castZone = nil
@@ -453,7 +475,7 @@ function loadCastCoroutine()
     end
 
     -- Places a card in its grid slot, or deals it to hand if there is no cast zone
-    local function placeCard(cardName, cardId, row, column)
+    local function placeCard(cardName, cardId, row, column, numeral)
         local castDeck = findCastDeck()
         if not castDeck then
             print("Error: Cast deck vanished or was moved during loading.")
@@ -464,7 +486,7 @@ function loadCastCoroutine()
             target, rotation, toHand = grid.slot(row, column), grid.rotation, false
         end
         isCloning = true
-        local success = cloneCardFromDeck(castDeck, cardName or "", cardId, target, rotation, config.color, toHand)
+        local success = cloneCardFromDeck(castDeck, cardName or "", cardId, target, rotation, config.color, toHand, numeral)
         if success then
             -- Wait only until the original is back in the deck; no fixed pause, so cards come down in one quick pass
             while isCloning do
@@ -502,13 +524,12 @@ function loadCastCoroutine()
 
     -- 2. Place every card first, in one pass: row 1 left to right, then row 2. The models follow once
     -- the cards have landed, so each model lands on its card and no character arrives ahead of the rest.
-    local minionId = (castData.dominion == "Iro-Si-Khar") and "02IRO-04MIN-0048" or "05AHE-04MIN-0148"
     local cardNames = {}
     if castData.championId then cardNames[castData.championId] = castData.champion end
     if hasAutoMinion then cardNames[minionId] = (castData.dominion == "Iro-Si-Khar") and "Driplet" or "Huskling" end
 
-    for column, id in ipairs(rowOneIds) do
-        placeCard(cardNames[id] or "", id, 1, column)
+    for column, card in ipairs(rowOne) do
+        placeCard(cardNames[card.id] or "", card.id, 1, column, card.numeral)
     end
     table.sort(rowTwoPlacements, function(a, b) return a.column < b.column end)
     for _, entry in ipairs(rowTwoPlacements) do
@@ -523,12 +544,12 @@ function loadCastCoroutine()
     end
 
     local unitIndex = 0 -- row in the side-of-table fallback layout
-    local function spawnModels(id, qty, isStacked, label)
+    local function spawnModels(id, slot, qty, isStacked, label, numeral)
         unitIndex = unitIndex + 1
-        local position, step = modelPlacement(slotOf[id], qty, unitIndex)
+        local position, step = modelPlacement(slot, qty, unitIndex)
         isCloning = true
         -- Rotate standees around Y so they face the players directly
-        local modelSuccess = cloneModelFromBag(modelsBag, id, qty, position, targetModelRot, step, isStacked, config.color)
+        local modelSuccess = cloneModelFromBag(modelsBag, id, qty, position, targetModelRot, step, isStacked, config.color, numeral)
         if modelSuccess then
             while isCloning do
                 coroutine.yield(0)
@@ -542,18 +563,24 @@ function loadCastCoroutine()
     if modelsBag then
         -- 3a. Champion standee (Task 3 Improvement - Champion as Character 1)
         if champInRowOne then
-            spawnModels(castData.championId, 1, false, "Champion")
+            spawnModels(castData.championId, slotOf[castData.championId], 1, false, "Champion")
         end
-        -- 3b. Recruited unit standees, loyal companions included
+        -- 3b. Recruited unit standees, loyal companions included. Numbered copies get one model per card.
         for _, unitId in ipairs(unitIds) do
             local qty = castData.unitIdsRecruited[unitId]
             if qty and qty > 0 then
-                spawnModels(unitId, qty, false, "Unit")
+                if slotOf[unitId] or not grid then
+                    spawnModels(unitId, slotOf[unitId], qty, false, "Unit")
+                else
+                    for _, column in ipairs(columnsOf[unitId]) do
+                        spawnModels(unitId, { row = 1, column = column }, 1, false, "Unit", rowOne[column].numeral)
+                    end
+                end
             end
         end
         -- 3c. 12 stacked minions on the minion card (Driplet / Huskling Lot for Iro-Si-Khar & Ahèserec) (Tweak 2)
         if hasAutoMinion then
-            spawnModels(minionId, 12, true, "Minion")
+            spawnModels(minionId, slotOf[minionId], 12, true, "Minion")
         end
     end
 
@@ -612,7 +639,8 @@ end
 
 -- Core Function: Clones a specific card by name OR unique ID (GM Notes) from a deck, and drops original back
 -- toHand = true deals the clone to the player's hand; false leaves it where it spawned (a cast zone slot)
-function cloneCardFromDeck(deck, cardName, cardId, targetPos, targetRot, playerColor, toHand)
+-- numeral ("I", "II", "III") gives the clone a numeral plate, for a familiar taken more than once
+function cloneCardFromDeck(deck, cardName, cardId, targetPos, targetRot, playerColor, toHand, numeral)
     -- Handle single Card container vs Deck container
     if deck.type == "Card" then
         local matched = false
@@ -628,10 +656,8 @@ function cloneCardFromDeck(deck, cardName, cardId, targetPos, targetRot, playerC
         end
         
         if matched then
-            local clonedObj = deck.clone({
-                position = {x = targetPos.x, y = targetPos.y, z = targetPos.z},
-                rotation = targetRot
-            })
+            local clonedObj = copyObject(deck, {x = targetPos.x, y = targetPos.y, z = targetPos.z}, targetRot,
+                numeral and function(data) data.XmlUI = cardNumeralXml(deck, numeral) end)
             if toHand then
                 Wait.frames(function()
                     if clonedObj ~= nil and not clonedObj.isDestroyed() then
@@ -673,10 +699,8 @@ function cloneCardFromDeck(deck, cardName, cardId, targetPos, targetRot, playerC
                 smooth = false,
                 callback_function = function(cardObj)
                     -- Clone it to its exact destination
-                    local clonedObj = cardObj.clone({
-                        position = {x = targetPos.x, y = targetPos.y, z = targetPos.z},
-                        rotation = targetRot
-                    })
+                    local clonedObj = copyObject(cardObj, {x = targetPos.x, y = targetPos.y, z = targetPos.z}, targetRot,
+                        numeral and function(data) data.XmlUI = cardNumeralXml(cardObj, numeral) end)
                     
                     if not toHand then trackSpawned(playerColor, clonedObj) end -- hand cards are cleared with the hand
 
@@ -808,11 +832,15 @@ end
 -- Works out each row-2 card's column: behind the row-1 character it belongs to (entry.attachedId), or
 -- else the next column nothing in row 2 uses yet. Entries are placed in order, so earlier ones (loyal
 -- companions) claim their slot first. Returns the placements and the number of columns needed.
-function planRowTwoColumns(entries, columnOf, rowOneCount)
+function planRowTwoColumns(entries, columnsOf, rowOneCount)
     local placements, used, loose = {}, {}, {}
     for _, entry in ipairs(entries) do
-        local column = entry.attachedId and columnOf[entry.attachedId]
-        if column and not used[column] then
+        -- Behind the first copy of its character with nothing behind it yet
+        local column = nil
+        for _, c in ipairs(entry.attachedId and columnsOf[entry.attachedId] or {}) do
+            if not used[c] then column = c; break end
+        end
+        if column then
             used[column] = true
             table.insert(placements, { id = entry.id, column = column, isTalisman = entry.isTalisman })
         else
@@ -893,6 +921,28 @@ function getCastZoneGrid(zone, columnCount)
     }
 end
 
+-- Copies an object to a position. With an edit function, the copy is spawned from the object's data
+-- after the edit, so it arrives already carrying it (a card's numeral plate, a model's numeral).
+function copyObject(obj, position, rotation, edit)
+    if not edit then
+        return obj.clone({ position = position, rotation = rotation })
+    end
+    local data = obj.getData()
+    edit(data)
+    return spawnObjectData({ data = data, position = position, rotation = rotation })
+end
+
+-- The XML for a card's numeral plate, floating just past one end of the card. The card's length comes
+-- from its bounds, so the plate clears the edge whatever the deck's card size.
+function cardNumeralXml(card, numeral)
+    local length = card.getBoundsNormalized().size.z / card.getScale().z -- in the card's own units
+    local offset = math.floor(CARD_NUMERAL_SIDE * (length * 50 + CARD_NUMERAL_HEIGHT / 2 + CARD_NUMERAL_GAP) + 0.5)
+    return string.format([[
+<Panel width="%d" height="%d" position="0 %d -%d" rotation="%s" color="#111c24e6" outline="#2c3e50" outlineSize="2">
+    <Text fontStyle="Bold" fontSize="40" color="#e4a557" alignment="MiddleCenter">%s</Text>
+</Panel>]], CARD_NUMERAL_WIDTH, CARD_NUMERAL_HEIGHT, offset, CARD_NUMERAL_LIFT, CARD_NUMERAL_ROTATION, numeral)
+end
+
 -- Get central physical spawn position for models
 function getSpawnPositionForModels(config)
     if config.character_zone_guid and config.character_zone_guid ~= "XXXXXX" and config.character_zone_guid ~= "" then
@@ -905,8 +955,9 @@ function getSpawnPositionForModels(config)
 end
 
 -- Core Function: Clones a specific model by ID from a bag N times, each copy one step on from the last
--- (step = {x, z}), and returns the original to the bag
-function cloneModelFromBag(bag, modelId, qty, targetPos, targetRot, step, isStacked, playerColor)
+-- (step = {x, z}), and returns the original to the bag. numeral ("I", "II", "III") is saved into each
+-- copy's state, where its health tracker picks it up and shows it above the health panel.
+function cloneModelFromBag(bag, modelId, qty, targetPos, targetRot, step, isStacked, playerColor, numeral)
     if not bag then return false end
     
     for _, objInfo in ipairs(bag.getObjects()) do
@@ -938,10 +989,8 @@ function cloneModelFromBag(bag, modelId, qty, targetPos, targetRot, step, isStac
                             }
                         end
                         
-                        local clonedObj = modelObj.clone({
-                            position = modelPos,
-                            rotation = targetRot
-                        })
+                        local clonedObj = copyObject(modelObj, modelPos, targetRot,
+                            numeral and function(data) data.LuaScriptState = JSON.encode({ numeral = numeral }) end)
                         
                         if playerColor and clonedObj ~= nil then
                             clonedObj.setColorTint(playerColor)
