@@ -9,7 +9,7 @@ nothing but `zlib` and `re`.
 
 Run from the repo root:
 
-    python3 dextrous/extract_brand_palette.py
+    python3 dextrous/01_Scripts/99_extract_brand_palette.py
 
 Writes nothing; prints what it finds. The curated result lives in
 `assets/branding/palette-extracted.md`.

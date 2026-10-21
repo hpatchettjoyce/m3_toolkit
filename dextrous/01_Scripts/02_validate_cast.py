@@ -6,7 +6,7 @@ needs the game running -- so this script is the one thing that runs offline. Eve
 later chunk of UPGRADE_PLAN.md leans on it before asking for a manual test.
 
 Usage:
-    python3 dextrous/validate_cast.py [--csv PATH] [--deck PATH]
+    python3 dextrous/01_Scripts/02_validate_cast.py [--csv PATH] [--deck PATH]
 
 Exits 0 when the data is sane, 1 with a readable report when it is not.
 
@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import importlib
 import json
 import re
 import sys
@@ -24,9 +25,9 @@ import unicodedata
 from collections import Counter, defaultdict
 from pathlib import Path
 
-REPO_ROOT = Path(__file__).resolve().parent.parent
+REPO_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_CSV = REPO_ROOT / "M3_TTS_DB - Cast.csv"
-# The deck defaults to the newest Dextrous export, found the same way the compiler finds it,
+# The deck defaults to the newest raw Dextrous export, found the same way the compiler finds it,
 # so a new `MonuMentuM DD-MM-YYYY.json` is checked without anyone passing --deck.
 DECK_DIR = REPO_ROOT / "dextrous"
 
@@ -259,7 +260,7 @@ def ether_tag_errors(details: str) -> list[str]:
 #     {M3/Icons/Dice/Void Square.svg}                   (bare)
 #
 # `M3/Icons/<Type>/<File>` resolves to `assets/inline icons/<type>/<File>`. The web app
-# draws them from a sprite that `build_svg_sprite.py` embeds, keyed by `icon_symbol_id`.
+# draws them from a sprite that `03_build_svg_sprite.py` embeds, keyed by `icon_symbol_id`.
 # The JavaScript in CastRecruiter.html (ICON_TOKEN, iconSymbolId) is the twin of these
 # three definitions -- change both or neither.
 
@@ -268,8 +269,8 @@ ICON_TOKEN_PATTERN = re.compile(
     r"|\{M3/Icons/(?P<btype>[^/{}]+)/(?P<bfile>[^{}]+?)\.(?:svg|png)\}"
 )
 
-ICON_ROOT = Path(__file__).resolve().parent.parent / "assets" / "inline icons"
-SPRITE_HTML = Path(__file__).resolve().parent.parent / "webapp" / "CastRecruiter.html"
+ICON_ROOT = REPO_ROOT / "assets" / "inline icons"
+SPRITE_HTML = REPO_ROOT / "webapp" / "CastRecruiter.html"
 
 
 def icon_tokens(text: str) -> list[tuple[str, str, str]]:
@@ -435,7 +436,7 @@ def check_icon_tokens(label: str, column: str, text: str, report: Report) -> Non
             report.fail(
                 "icon token embedded",
                 f"{label}: {column} uses {token}, which isn't in the web app yet — "
-                "run python3 dextrous/build_svg_sprite.py",
+                "run python3 dextrous/01_Scripts/03_build_svg_sprite.py",
             )
     leftover = ICON_TOKEN_PATTERN.sub("", text)
     if "{" in leftover or "}" in leftover:
@@ -706,12 +707,14 @@ def check_deck(path: Path, csv_row_count: int, report: Report) -> None:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--csv", type=Path, default=DEFAULT_CSV, help=f"default: {DEFAULT_CSV.name}")
-    parser.add_argument("--deck", type=Path, default=None, help="default: newest 'MonuMentuM *.json' in dextrous/")
+    parser.add_argument("--deck", type=Path, default=None, help="default: newest raw export in dextrous/")
     args = parser.parse_args(argv)
     if args.deck is None:
-        from generate_card_images import CompileError, find_deck
+        # A module name can't start with a digit in an import statement, so load it by name.
+        compiler = importlib.import_module("04_generate_card_images")
+        CompileError = compiler.CompileError
         try:
-            args.deck = find_deck(DECK_DIR)
+            args.deck = compiler.find_deck(DECK_DIR)
         except CompileError as exc:
             print(f"FAILED — {exc}")
             return 1

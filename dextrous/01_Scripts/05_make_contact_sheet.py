@@ -9,7 +9,7 @@ therefore has to match the CSV's row order exactly. When it doesn't -- because
 the intermediate sheet that feeds Dextrous was re-ordered, say -- every card ends
 up labelled with a different card's name, and nothing downstream can tell:
 
-  * the deck is structurally perfect, so `validate_cast.py` passes,
+  * the deck is structurally perfect, so `02_validate_cast.py` passes,
   * the counts match, so the compiler's hard bails never fire,
   * every ID is unique and well-formed, so the web app loads happily.
 
@@ -18,20 +18,21 @@ This page makes that a single scroll instead of 200 lookups in Tabletop
 Simulator. Regenerate it after every Dextrous export, before trusting the deck.
 
 Usage:
-    python3 dextrous/make_contact_sheet.py [--deck PATH] [--out PATH] [--open]
+    python3 dextrous/01_Scripts/05_make_contact_sheet.py [--deck PATH] [--out PATH] [--open]
 """
 
 from __future__ import annotations
 
 import argparse
 import html
+import importlib
 import json
 import sys
 from collections import Counter
 from pathlib import Path
 
-REPO = Path(__file__).resolve().parent.parent
-# Newest Dextrous export by default, found the same way the compiler finds it
+REPO = Path(__file__).resolve().parents[2]
+# Newest processed deck by default, found the same way the compiler finds the raw one
 DECK_DIR = REPO / "dextrous"
 DEFAULT_OUT = REPO / "dextrous" / "contact_sheet.html"
 
@@ -63,7 +64,7 @@ def load_cards(deck_path: Path) -> tuple[list[dict], dict]:
     if missing:
         raise ContactSheetError(
             f"{missing} of {len(cards)} cards have no GMNotes -- this deck has not been "
-            "injected. Run dextrous/generate_card_images.py first."
+            "injected. Run dextrous/01_Scripts/04_generate_card_images.py first."
         )
     return cards, sheets
 
@@ -149,15 +150,16 @@ def build(cards: list[dict], sheets: dict) -> str:
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--deck", type=Path, default=None, help="default: newest 'MonuMentuM *.json' in dextrous/")
+    ap.add_argument("--deck", type=Path, default=None, help="default: newest processed deck in dextrous/")
     ap.add_argument("--out", type=Path, default=DEFAULT_OUT)
     args = ap.parse_args()
     if args.deck is None:
         sys.path.insert(0, str(Path(__file__).resolve().parent))
-        from generate_card_images import CompileError, find_deck
+        # A module name can't start with a digit in an import statement, so load it by name.
+        compiler = importlib.import_module("04_generate_card_images")
         try:
-            args.deck = find_deck(DECK_DIR)
-        except CompileError as exc:
+            args.deck = compiler.find_deck(DECK_DIR, compiler.PROCESSED)
+        except compiler.CompileError as exc:
             print(f"  contact sheet: {exc}", file=sys.stderr)
             return 1
 

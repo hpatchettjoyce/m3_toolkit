@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 """Compile the cast database and the TTS deck export into the web app's art map.
 
-One CSV in, one deck JSON in; an ID-keyed `webapp/CardImages.gs` out and the deck
-JSON injected in place with `Nickname`, `GMNotes` and `Description`.
+One CSV in, one raw deck JSON in; an ID-keyed `webapp/CardImages.gs` out, and a
+processed copy of the deck (`... - Processed.json`) with `Nickname`, `GMNotes` and
+`Description` stamped in. The raw export is never modified.
 
 Usage:
-    python3 dextrous/generate_card_images.py [--csv PATH] [--deck PATH] [--out PATH]
-                                             [--dry-run]
+    python3 dextrous/01_Scripts/04_generate_card_images.py [--csv PATH] [--deck PATH]
+                                                           [--out PATH] [--dry-run]
 
 Exits 0 on success, 1 with a readable reason on any mismatch. The injection is
 positional -- deck card N takes its identity from CSV row N -- so every check here
@@ -25,7 +26,7 @@ import re
 import sys
 from pathlib import Path
 
-REPO_ROOT = Path(__file__).resolve().parent.parent
+REPO_ROOT = Path(__file__).resolve().parents[2]
 DEXTROUS_DIR = REPO_ROOT / "dextrous"
 DEFAULT_CSV = REPO_ROOT / "M3_TTS_DB - Cast.csv"
 DEFAULT_OUT = REPO_ROOT / "webapp" / "CardImages.gs"
@@ -37,9 +38,13 @@ DEFAULT_OUT = REPO_ROOT / "webapp" / "CardImages.gs"
 DECK_GLOB = "MonuMentuM *.json"
 SUPERSEDED_DECK_QUALIFIERS = ("Characters", "Specials")
 
-# Dextrous names its exports `MonuMentuM DD-MM-YYYY.json`. Ordering on that date beats
-# ordering on mtime, which a clone or a checkout resets.
-DECK_DATE_RE = re.compile(r"(\d{2})-(\d{2})-(\d{4})\.json$")
+# Dextrous names its exports `MonuMentuM DD-MM-YYYY.json`. The first script to find one
+# renames it `... - Raw.json`; the compiler writes `... - Processed.json` beside it, so
+# the folder always says which is which. Ordering on the date beats ordering on mtime,
+# which a clone or a checkout resets.
+RAW = "Raw"
+PROCESSED = "Processed"
+DECK_DATE_RE = re.compile(r"(\d{2})-(\d{2})-(\d{4})(?: - (Raw|Processed))?\.json$")
 
 # The three columns this script reads. The pre-D7 schema spelled them `Name (str)` and
 # `ID (str)`; reading those literally against the current header injected empty strings
@@ -66,28 +71,44 @@ def synthetic_id(name: str) -> str:
     return "SYN-" + "".join(c for c in name if c.isalnum()).upper()
 
 
-def find_deck(directory: Path) -> Path:
-    """Newest `MonuMentuM *.json` export, by the date in its filename."""
+def label_raw_exports(directory: Path) -> None:
+    """Rename a fresh `MonuMentuM DD-MM-YYYY.json` from Dextrous to `... - Raw.json`."""
+    for path in directory.glob(DECK_GLOB):
+        match = DECK_DATE_RE.search(path.name)
+        if match and match.group(4) is None:
+            target = path.with_name(f"{path.stem} - {RAW}.json")
+            if target.exists():
+                raise CompileError(f"both {path.name} and {target.name} exist; delete the one you don't want")
+            path.rename(target)
+            print(f"  labelled {path.name} as {target.name}")
+
+
+def find_deck(directory: Path, kind: str = RAW) -> Path:
+    """Newest `MonuMentuM DD-MM-YYYY - <kind>.json`, by the date in its filename."""
+    if kind == RAW:
+        label_raw_exports(directory)
     candidates = [
-        Path(p)
-        for p in glob.glob(str(directory / DECK_GLOB))
-        if not any(q in Path(p).name for q in SUPERSEDED_DECK_QUALIFIERS)
+        path
+        for path in directory.glob(DECK_GLOB)
+        if not any(q in path.name for q in SUPERSEDED_DECK_QUALIFIERS)
+        and (m := DECK_DATE_RE.search(path.name)) and m.group(4) == kind
     ]
     if not candidates:
-        raise CompileError(
-            f"no deck export matching '{DECK_GLOB}' in {directory} "
-            f"(excluding the superseded {'/'.join(SUPERSEDED_DECK_QUALIFIERS)} exports)"
-        )
+        hint = ("save the Dextrous export into dextrous/" if kind == RAW
+                else "run dextrous/01_Scripts/04_generate_card_images.py first")
+        raise CompileError(f"no 'MonuMentuM DD-MM-YYYY - {kind}.json' in {directory}: {hint}")
 
     def sort_key(path: Path) -> tuple[int, int, int, float]:
-        match = DECK_DATE_RE.search(path.name)
-        if match:
-            day, month, year = (int(g) for g in match.groups())
-            return (year, month, day, path.stat().st_mtime)
-        # Undated name: fall back to mtime, and sort below anything dated.
-        return (0, 0, 0, path.stat().st_mtime)
+        day, month, year = (int(g) for g in DECK_DATE_RE.search(path.name).groups()[:3])
+        return (year, month, day, path.stat().st_mtime)
 
     return sorted(candidates, key=sort_key)[-1]
+
+
+def processed_path(raw_path: Path) -> Path:
+    """`MonuMentuM DD-MM-YYYY - Raw.json` -> `MonuMentuM DD-MM-YYYY - Processed.json`."""
+    stem = raw_path.stem.removesuffix(f" - {RAW}").removesuffix(f" - {PROCESSED}")
+    return raw_path.with_name(f"{stem} - {PROCESSED}.json")
 
 
 def load_rows(path: Path) -> list[dict]:
@@ -206,7 +227,7 @@ def compile_cards(rows: list[dict], deck: dict) -> list[dict]:
 
 
 def inject(cards: list[dict]) -> None:
-    """Stamp identity onto each deck card, in place.
+    """Stamp identity onto each deck card (on the loaded copy; the raw file is untouched).
 
     `Nickname` is the hover name, `GMNotes` stays the plain ID so every existing
     consumer is untouched, and `Description` carries the class for §3.2.
@@ -233,7 +254,7 @@ def render_gs(cards: list[dict], generated_on: str) -> str:
     return f"""/**
  * Auto-generated card image mappings from the Tabletop Simulator deck export.
  * Generated on: {generated_on}
- * DO NOT EDIT THIS FILE MANUALLY -- run dextrous/generate_card_images.py.
+ * DO NOT EDIT THIS FILE MANUALLY -- run dextrous/01_Scripts/04_generate_card_images.py.
  *
  * Keyed by card ID, not by row index: the cast list is ordered in dominion blocks,
  * so any re-order would otherwise attach art to the wrong cards (UPGRADE_PLAN.md §3.3).
@@ -264,7 +285,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--csv", type=Path, default=DEFAULT_CSV,
                         help=f"default: {DEFAULT_CSV.name}")
     parser.add_argument("--deck", type=Path, default=None,
-                        help=f"default: newest '{DECK_GLOB}' in {DEXTROUS_DIR.name}/")
+                        help=f"default: newest raw export in {DEXTROUS_DIR.name}/")
     parser.add_argument("--out", type=Path, default=DEFAULT_OUT,
                         help=f"default: {DEFAULT_OUT.relative_to(REPO_ROOT)}")
     parser.add_argument("--dry-run", action="store_true",
@@ -298,15 +319,16 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.dry_run:
         print(f"  dry run: would write {len(cards)} entries to {args.out}")
-        print(f"  dry run: would inject {len(cards)} cards into {deck_path}")
+        print(f"  dry run: would write {len(cards)} stamped cards to {processed_path(deck_path).name}")
         return 0
 
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(gs_content, encoding="utf-8")
-    write_deck(data, deck_path)
+    out_deck = processed_path(deck_path)
+    write_deck(data, out_deck)
 
     print(f"  wrote {args.out} -- {len(cards)} ID-keyed entries")
-    print(f"  injected Nickname/GMNotes/Description into {deck_path.name}")
+    print(f"  wrote {out_deck.name} -- Nickname/GMNotes/Description stamped in")
     print("OK")
     return 0
 

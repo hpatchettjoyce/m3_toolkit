@@ -12,7 +12,7 @@ matter: `--success-colour` and `--warning-colour` are used BOTH as button fills
 and as tracker text on a panel (CastRecruiter.html, updateTrackers()), so they
 have to clear on both. Run with no arguments:
 
-    python3 dextrous/check_theme_contrast.py
+    python3 dextrous/01_Scripts/06_check_theme_contrast.py
 
 No dependencies. Exit status is 0 when every pair passes.
 """
@@ -20,7 +20,7 @@ import pathlib
 import re
 import sys
 
-HTML = pathlib.Path(__file__).resolve().parent.parent / "webapp" / "CastRecruiter.html"
+HTML = pathlib.Path(__file__).resolve().parents[2] / "webapp" / "CastRecruiter.html"
 
 # WCAG 2.1 thresholds. Body text is AA at 4.5:1; a boundary that identifies a
 # control, or a graphical cue carrying meaning, is 1.4.11 at 3:1. Surfaces that

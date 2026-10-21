@@ -15,7 +15,7 @@
 --]]
 
 -- The classes the deck is expected to carry in each card's Description (written by
--- generate_card_images.py). Used only to warn when a deck looks stale -- see checkClassCoverage().
+-- 04_generate_card_images.py). Used only to warn when a deck looks stale -- see checkClassCoverage().
 KNOWN_CLASSES = {
     ["CHAMPION"] = true,
     ["FAMILIAR"] = true,
@@ -99,7 +99,7 @@ function injectIdsCoroutine()
     
     -- 1. Extract Name-to-ID mapping from the Deck
     -- Maps lowercased card name -> { id, class }. The class rides along from the deck card's
-    -- Description (written by generate_card_images.py) so the model can be stamped with it --
+    -- Description (written by 04_generate_card_images.py) so the model can be stamped with it --
     -- see UPGRADE_PLAN.md S3.2. Note Description is NOT a name fallback any more: it holds the
     -- class now, so falling back to it would map a card under the name "CHAMPION".
     local nameToCard = {}

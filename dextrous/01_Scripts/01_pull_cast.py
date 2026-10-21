@@ -7,11 +7,11 @@ sheet, "02_Card and Dominion Effects", to Drive as CSV every 15 minutes. Drive f
 syncs that folder to G:, so this script only copies the file over `M3_TTS_DB - Cast.csv`
 and says how fresh it is and which cards changed.
 
-    python3 dextrous/pull_cast.py [--source PATH] [--out PATH]
+    python3 dextrous/01_Scripts/01_pull_cast.py [--source PATH] [--out PATH]
 
 The export reflects the sheet as of its last run. After editing the sheet, either wait for
 the next 15-minute run or run `pullNow` in the exporter's Apps Script editor; the
-"exported" time printed here shows which you got. Run validate_cast.py next, as before.
+"exported" time printed here shows which you got. Run 02_validate_cast.py next, as before.
 
 Exits 1 when the export is missing, unreadable or marked failed.
 """
@@ -26,7 +26,7 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-REPO_ROOT = Path(__file__).resolve().parent.parent
+REPO_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_OUT = REPO_ROOT / "M3_TTS_DB - Cast.csv"
 SOURCES = Path("/mnt/g/My Drive/05_GAME DESIGN CONCEPTS/Monumentum/05_AI Agent Support/02_Sources")
 SHEET = "02_Card and Dominion Effects"
@@ -116,7 +116,7 @@ def main() -> None:
     report_changes(old_text, new_text)
     # Written as exported (no BOM, LF endings); every reader in dextrous/ accepts both forms.
     args.out.write_text(new_text, encoding="utf-8", newline="")
-    print(f"Wrote {args.out.name}. Next: python3 dextrous/validate_cast.py")
+    print(f"Wrote {args.out.name}. Next: python3 dextrous/01_Scripts/02_validate_cast.py")
 
 
 if __name__ == "__main__":

@@ -12,9 +12,9 @@ The M3 Toolkit bridges three independent runtime environments—a **Google Sheet
        [ Google Sheets Database ]
           (Tab: IN Cast — all 200 cards)
                     │
-                    ▼ (pull_cast.py copies the Source Exporter's Cast.csv → "M3_TTS_DB - Cast.csv")
+                    ▼ (01_pull_cast.py copies the Source Exporter's Cast.csv → "M3_TTS_DB - Cast.csv")
       [ Python Metadata Compiler ] ──(Generates CardImages.gs)──► [ Web App (GAS Backend) ]
-         (generate_card_images.py)                                     │ (Serves Card Data)
+         (04_generate_card_images.py)                                     │ (Serves Card Data)
                     │                                                  ▼
                     │ (Injects names/IDs, positionally)  [ Visual Cast Recruiter SPA ]
                     ▼                                            (CastRecruiter.html)
@@ -41,10 +41,10 @@ The M3 Toolkit bridges three independent runtime environments—a **Google Sheet
 ```
 
 **Off to one side of that flow** sit the checks and the asset pipeline, which nothing in the diagram
-calls but every change has to pass: `validate_cast.py` (the one thing that runs offline — CSV shape,
-row order, champion links, icon tokens, deck pairing), `build_svg_sprite.py` (embeds the inline icons
-into the HTML, because Apps Script hosts no static assets), `make_contact_sheet.py` (the only check
-that catches `DEX Cast` drifting out of step with `IN Cast`), and `check_theme_contrast.py` (colour
+calls but every change has to pass: `02_validate_cast.py` (the one thing that runs offline — CSV shape,
+row order, champion links, icon tokens, deck pairing), `03_build_svg_sprite.py` (embeds the inline icons
+into the HTML, because Apps Script hosts no static assets), `05_make_contact_sheet.py` (the only check
+that catches `DEX Cast` drifting out of step with `IN Cast`), and `06_check_theme_contrast.py` (colour
 tokens). `UPDATING.md` says which to run when.
 
 ---
@@ -58,7 +58,7 @@ m3_toolkit/
 ├── CLAUDE.md                           # Agent-facing reference: stack, architecture, gotchas, deploy
 ├── UPDATING.md                         # Human-facing: which script to run for which kind of change
 ├── UPGRADE_PLAN.md                     # The chunked upgrade plan and its as-built record
-├── M3_TTS_DB - Cast.csv                # (gitignored) The master Cast tab via pull_cast.py — 200 rows, the compiler's input
+├── M3_TTS_DB - Cast.csv                # (gitignored) The master Cast tab via 01_pull_cast.py — 200 rows, the compiler's input
 │
 ├── webapp/                             # Google Apps Script Web App & Webhook Backend
 │   ├── main.gs                         # Core entry point, doGet/doPost routing, schema mapping
@@ -69,14 +69,17 @@ m3_toolkit/
 │   └── .clasprc.json                   # clasp local user authentication credentials
 │
 ├── dextrous/                           # Python-based Compilation, Validation & Asset Automation
-│   ├── generate_card_images.py         # Compiler: CSV + deck JSON -> CardImages.gs, deck injected in place
-│   ├── pull_cast.py                    # Copies the Source Exporter's Cast.csv from Drive over the repo CSV
-│   ├── validate_cast.py                # Offline validator — the gate every change passes before a manual test
-│   ├── build_svg_sprite.py             # Embeds the referenced inline icons into CastRecruiter.html
-│   ├── make_contact_sheet.py           # Art-next-to-name page; catches DEX Cast / IN Cast drift
-│   ├── check_theme_contrast.py         # Asserts every colour pair the app renders, screen and print
-│   ├── extract_brand_palette.py        # One-off: reads the palette out of the branding PDF with zlib
-│   └── MonuMentuM DD-MM-YYYY.json      # (gitignored) TTS Saved Object Deck — one 200-card 'Cast' deck, names/IDs injected
+│   ├── 01_Scripts/                     # Numbered in run order; UPDATING.md step N = script 0N_
+│   │   ├── 01_pull_cast.py             # Copies the Source Exporter's Cast.csv from Drive over the repo CSV
+│   │   ├── 02_validate_cast.py         # Offline validator — the gate every change passes before a manual test
+│   │   ├── 03_build_svg_sprite.py      # Embeds the referenced inline icons into CastRecruiter.html
+│   │   ├── 04_generate_card_images.py  # Compiler: CSV + raw deck -> CardImages.gs + processed deck
+│   │   ├── 05_make_contact_sheet.py    # Art-next-to-name page; catches DEX Cast / IN Cast drift
+│   │   ├── 06_check_theme_contrast.py  # Asserts every colour pair the app renders, screen and print
+│   │   └── 99_extract_brand_palette.py # One-off: reads the palette out of the branding PDF with zlib
+│   ├── MonuMentuM DD-MM-YYYY - Raw.json        # (gitignored) the Dextrous export as made — never edited
+│   ├── MonuMentuM DD-MM-YYYY - Processed.json  # (gitignored) same 200-card 'Cast' deck, names/IDs/classes stamped in; TTS gets this one
+│   └── contact_sheet.html              # (gitignored) built from the processed deck
 │
 ├── assets/                             # Source art (not served — embedded into the HTML by the scripts)
 │   ├── branding/                       # Brand guide PDF, logo lockups, palette source
@@ -101,7 +104,7 @@ The web app is deployed as a single-page visual recruiter and automated webhook 
 
 *   **Database Fetching (`getCardDatabase`)**:
     *   Retrieves raw card data from a **single** spreadsheet tab — **`IN Cast`**, all 200 cards (Champion, Familiar, Minion, Talisman, Special Action). The old `IN Cha-Tal` / `IN SP` pair is gone. The tab name is the `CAST_SHEET_NAME` constant at the top of `main.gs`; `getSheetByName()` matches exactly, so a rename means editing that one constant, `clasp push`, redeploy.
-    *   Classes are stored in all caps in the sheet and normalised to Title Case at the parse boundary. `normaliseName()` here is the twin of `normalise_name()` in `validate_cast.py` — change both or neither.
+    *   Classes are stored in all caps in the sheet and normalised to Title Case at the parse boundary. `normaliseName()` here is the twin of `normalise_name()` in `02_validate_cast.py` — change both or neither.
     *   **🚨 `MATCH_SHEET_NAME` is not a second cast source.** It is the *write* destination for the TTS webhook (`IN TTS`); pointing it at a card-data tab appends match logs onto the bottom of the cards.
     *   **🚨 Global Namespace Caution**: In Google Apps Script, all `.gs` files share a flat global scope, so two files defining the same function name silently override one another. This previously happened here — `CardDatabase.gs` shipped a competing `getCardDatabase()`. That file has since been deleted (its `getRawCardDatabase()` helper was never called by anything), leaving the structured category-mapping implementation in `main.gs` as the sole definition. Do not add a second card-fetching implementation in another `.gs` file.
 *   **Webhook Ingestion (`doPost`)**:
@@ -109,7 +112,7 @@ The web app is deployed as a single-page visual recruiter and automated webhook 
     *   The `finally` block releases the lock only if `waitLock()` actually returned (tracked by a `hasLock` flag). Releasing unconditionally would have meant calling `releaseLock()` on the one path where the lock was never held — the timeout path.
 *   **Visual Recruiter SPA (`CastRecruiter.html`)**:
     *   Provides players with a responsive interface to select a Dominion faction, review card text/stats, and recruit a legal deck under compliance rules. Since Chunk 8 the shell is a two-column grid: `.container` (max `1600px`) beside a laid-out `.status-rail` (trackers, Print, Export) that folds into a sticky row above the builder below 1100px. **Card column counts are `@container` queries on `.container`, not viewport media queries** — the rail eats viewport width, so the viewport is the wrong thing to measure; only the phone step (<600px, one card per row) is a media query. As-built table: `UPGRADE_PLAN.md` Chunk 8 item 1.
-    *   **Inline SVG icons in rules text**: rules and Keywords cells carry icon tokens (`{Icon:{M3/Icons/Prowess/Prowess Plus 1.svg}}`, or bare for dice) that `formatRulesText(text, { icons: true })` resolves to `<use>` references into a sprite `build_svg_sprite.py` writes between the `SPRITE_START`/`SPRITE_END` markers. Only the icons the CSV actually references are embedded; anything unembedded — and everything on paper — falls back to `[PROWESS +1]`-style text.
+    *   **Inline SVG icons in rules text**: rules and Keywords cells carry icon tokens (`{Icon:{M3/Icons/Prowess/Prowess Plus 1.svg}}`, or bare for dice) that `formatRulesText(text, { icons: true })` resolves to `<use>` references into a sprite `03_build_svg_sprite.py` writes between the `SPRITE_START`/`SPRITE_END` markers. Only the icons the CSV actually references are embedded; anything unembedded — and everything on paper — falls back to `[PROWESS +1]`-style text.
     *   **Sanitised Rules Text**: Card text from the spreadsheet is passed through `escapeHtml()` *before* `formatRulesText()` applies its bold/italic/icon markup, so only the markup the app generates is live HTML. Anything angle-bracketed in the sheet renders as literal text. The print-card stat line escapes its interpolated values the same way. If you add markup rules to `formatRulesText()`, keep them after the escape step.
     *   **Signature Action Segregation**: Splitting the Specials rendering into separate visual DOM grids (`#signature-container` vs `#specials-container`) to isolate a Champion's free Signature Actions from generic, cost-allocated Special Actions.
     *   **JSON Roster Sharing**: 
@@ -125,24 +128,24 @@ The web app is deployed as a single-page visual recruiter and automated webhook 
 
 ### 2. Python-Based Compiler Script (`dextrous/`)
 
-The compilation script `generate_card_images.py` acts as the bridge between the raw sheet export (one CSV) and Tabletop Simulator's Saved Object file. **One CSV in, one deck JSON in; an ID-keyed `webapp/CardImages.gs` out and the deck JSON injected in place.**
+The compilation script `01_Scripts/04_generate_card_images.py` acts as the bridge between the raw sheet export (one CSV) and Tabletop Simulator's Saved Object file. **One CSV in, one raw deck JSON in; an ID-keyed `webapp/CardImages.gs` out, and a processed copy of the deck (`... - Processed.json`) beside the untouched raw one.**
 
 *   **CSV Parsing & Coordinate Generation**:
     *   Scans the single exported cast sheet — `M3_TTS_DB - Cast.csv` at the repo root (`--csv` overrides; the export carries a BOM, so it is read as `utf-8-sig`).
     *   Computes and compiles sprite coordinates, auto-generating the `webapp/CardImages.gs` data structure, keyed by **card ID** (`01RHA-01CHP-0001`), not a positional `champ_0`.
-    *   The deck defaults to the **newest** `dextrous/MonuMentuM DD-MM-YYYY.json` via `find_deck()` — `validate_cast.py` and `make_contact_sheet.py` share that resolution, so none of the three is pinned to a dated filename any more.
-*   **🚨 The pairing is positional, and that is the whole risk**: deck card N takes its identity from CSV row N. A Dextrous export arrives with `Nickname`, `GMNotes` and `Description` all blank, so nothing in the file can be cross-checked against the CSV — if the two orders drift, every affected card is silently labelled with a different card's name. The script fails loudly on a length mismatch; `make_contact_sheet.py` (art next to injected name) is the only check that catches a same-length reorder. `IN Cast`'s row order is canonical and `validate_cast.py` enforces it, so **`DEX Cast` must mirror `IN Cast` row for row** — the rows cannot be reordered to fix anything.
+    *   The deck defaults to the **newest** `dextrous/MonuMentuM DD-MM-YYYY - Raw.json` via `find_deck()`, which first renames a fresh `MonuMentuM DD-MM-YYYY.json` from Dextrous to `... - Raw.json`. `02_validate_cast.py` shares that resolution, and `05_make_contact_sheet.py` uses it with `kind=PROCESSED`, so none of them is pinned to a dated filename.
+*   **🚨 The pairing is positional, and that is the whole risk**: deck card N takes its identity from CSV row N. A Dextrous export arrives with `Nickname`, `GMNotes` and `Description` all blank, so nothing in the file can be cross-checked against the CSV — if the two orders drift, every affected card is silently labelled with a different card's name. The script fails loudly on a length mismatch; `05_make_contact_sheet.py` (art next to injected name) is the only check that catches a same-length reorder. `IN Cast`'s row order is canonical and `02_validate_cast.py` enforces it, so **`DEX Cast` must mirror `IN Cast` row for row** — the rows cannot be reordered to fix anything.
 *   **Unique ID Generation & Metadata Injection**:
     *   Constructs deterministic Unique IDs starting with a `SYN-` prefix for any spreadsheet items missing static IDs, and reports the count at the end of a run.
-    *   Modifies the TTS Saved Object JSON deck in place:
+    *   Writes the processed copy of the TTS Saved Object JSON deck (the raw export is never modified):
         1.  Injects the clean, human-readable card name into the **`Nickname`** property (visible when players hover over cards in-game).
         2.  Injects the Unique ID string into the **`GMNotes`** property (invisible to players, but readable by Tabletop Simulator scripts).
         3.  Injects the card's rules text into **`Description`**.
     *   This dual-property structure allows players to see familiar names while scripts execute safe, unique ID-based actions.
 
-### 2b. Offline Validator (`dextrous/validate_cast.py`)
+### 2b. Offline Validator (`dextrous/01_Scripts/02_validate_cast.py`)
 
-Nothing in this repo can be unit-tested locally — Apps Script needs a deploy and TTS needs the game running — so this is the one thing that runs offline, and every chunk of the upgrade plan leans on it before asking for a manual test. It checks the CSV against `EXPECTED_HEADER`, the canonical row order (each row's `#` and its ID's trailing sequence must equal its row position), the class census, champion links (including the Dextrous-safe transliterations), the deck pairing, and the icon tokens — asset exists, embedded in the sprite, no stray braces. **It fails with "isn't in the web app yet" until `build_svg_sprite.py` has been re-run after a re-export that uses a new icon.**
+Nothing in this repo can be unit-tested locally — Apps Script needs a deploy and TTS needs the game running — so this is the one thing that runs offline, and every chunk of the upgrade plan leans on it before asking for a manual test. It checks the CSV against `EXPECTED_HEADER`, the canonical row order (each row's `#` and its ID's trailing sequence must equal its row position), the class census, champion links (including the Dextrous-safe transliterations), the deck pairing, and the icon tokens — asset exists, embedded in the sprite, no stray braces. **It fails with "isn't in the web app yet" until `03_build_svg_sprite.py` has been re-run after a re-export that uses a new icon.**
 
 ### 3. Tabletop Simulator Automation Suite (`tts/`)
 

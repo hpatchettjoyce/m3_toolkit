@@ -214,7 +214,7 @@ function parseFormUrlEncoded(rawString) {
 /**
  * Fold a champion name to its comparison form.
  *
- * This is the JavaScript twin of `normalise_name()` in `dextrous/validate_cast.py`
+ * This is the JavaScript twin of `normalise_name()` in `dextrous/01_Scripts/02_validate_cast.py`
  * — the two MUST stay in step. `Role Details` carries a Dextrous-safe spelling of
  * the champion's name (no commas, no `ae` ligature), so both sides need folding
  * before they can match. A plain string compare resolves 19 of the 24 links and

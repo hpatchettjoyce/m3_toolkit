@@ -9,45 +9,55 @@ From Windows the folder is `\\wsl.localhost\Ubuntu\home\harvey\projects\m3_toolk
 |---|---|---|
 | Card text or stats in the sheet | nothing — the web app reads the sheet live | nothing |
 | Dominion rules, statuses, terrain, totems (master sheet's `Dominions` tab) | nothing — the web app reads that tab live | nothing |
-| …and the text uses an icon not used before | 1, 3, 4, 3 | web app |
-| Card names, IDs, classes, or added / removed / reordered rows | 1, 3, 5, 6 | web app, TTS deck (+ models if IDs or classes changed) |
-| New card art (new Dextrous export) | 2, 3, 5, 6 (and 1 first if the sheet changed) | web app, TTS deck |
-| An icon SVG or the footer logo | 4 | web app |
-| Colours in `webapp/CastRecruiter.html` | 7 | web app |
+| …and the text uses an icon not used before | 1, 2, 3, 2 | web app |
+| Card names, IDs, classes, or added / removed / reordered rows | 1, 2, 4, 5 | web app, TTS deck (+ models if IDs or classes changed) |
+| New card art (new Dextrous export) | 0, 2, 4, 5 (and 1 first if the sheet changed) | web app, TTS deck |
+| An icon SVG or the footer logo | 3 | web app |
+| Colours in `webapp/CastRecruiter.html` | 6 | web app |
 | A TTS Lua script | — | re-paste it in TTS |
 
 Plain text edits need nothing because the web app pulls card text straight from the `IN Cast` tab.
 The Dominion Rules section reads the master sheet's `Dominions` tab by ID (`DOMINIONS_SPREADSHEET_ID` in `main.gs`).
-Steps 1 and 3 are still a cheap check after any sheet edit.
+Steps 1 and 2 are still a cheap check after any sheet edit.
 
 ## Steps
 
-1. **Pull the CSV.** `python3 dextrous/pull_cast.py`. It copies the master sheet's `Cast` tab from
+Each step number matches its script in `dextrous/01_Scripts/` (step 2 is `02_validate_cast.py`, and so on).
+
+`dextrous/` itself holds only the data:
+- `MonuMentuM DD-MM-YYYY - Raw.json`: the export exactly as Dextrous made it. Never edited.
+- `MonuMentuM DD-MM-YYYY - Processed.json`: the same deck with names, IDs and classes stamped in by step 4. This is the one TTS gets.
+- `contact_sheet.html`: step 5's art-next-to-name check, built from the processed deck.
+
+0. **Add the Dextrous export.** Save `MonuMentuM DD-MM-YYYY.json` into `dextrous/` under the name
+   Dextrous gives it. The next script to run renames it `... - Raw.json`. The scripts use the newest
+   date automatically, so older Raw/Processed pairs can be deleted.
+1. **Pull the CSV.** `python3 dextrous/01_Scripts/01_pull_cast.py`. It copies the master sheet's `Cast` tab from
    the M3 Source Exporter's Drive output (refreshed every 15 minutes) over `M3_TTS_DB - Cast.csv`,
    and prints when the sheet was last exported and which cards changed. If you edited the sheet in
    the last 15 minutes and the "exported" time is older than your edit, run `pullNow` in the
    [exporter's Apps Script editor](https://script.google.com/d/1LdQRaCYG7Mbj0KgdNTRHIHaTHH9uyXGc8GEJlTVRHoBZxMx0eEwjrNpK/edit)
    and pull again. If it says G: is unmounted, run the remount command it prints.
-2. **Add the Dextrous export.** Put `MonuMentuM DD-MM-YYYY.json` in `dextrous/`. The scripts use the
-   newest date automatically. You can delete the older one.
-3. **Validate.** `python3 dextrous/validate_cast.py` must end in `PASSED`. It names the card and the fix.
-   The two icon messages:
-   - *"isn't in the web app yet"* → run step 4.
+2. **Validate.** `python3 dextrous/01_Scripts/02_validate_cast.py` must end in `PASSED`. It checks the
+   raw deck and names the card and the fix. The two icon messages:
+   - *"isn't in the web app yet"* → run step 3.
    - *"there is no assets/inline icons/…"* → the token in the sheet has a typo, or the SVG is missing
      from `assets/inline icons/<type>/`.
-4. **Embed icons.** `python3 dextrous/build_svg_sprite.py`. The web app can't load image files, so
+3. **Embed icons.** `python3 dextrous/01_Scripts/03_build_svg_sprite.py`. The web app can't load image files, so
    icons are copied into `CastRecruiter.html`. Only the icons the CSV uses are embedded, which is why
    a newly used icon needs this step.
-5. **Compile.** `python3 dextrous/generate_card_images.py`. This writes `webapp/CardImages.gs` (where
-   each card's art is) and stamps names, IDs and classes into the deck JSON. A Dextrous export has
-   no names, so they're matched to the CSV **by row position**.
-6. **Check the contact sheet.** `python3 dextrous/make_contact_sheet.py`, then open
+4. **Compile.** `python3 dextrous/01_Scripts/04_generate_card_images.py`. This writes `webapp/CardImages.gs` (where
+   each card's art is) and `MonuMentuM DD-MM-YYYY - Processed.json`, the raw deck with names, IDs and
+   classes stamped in. A Dextrous export has no names, so they're matched to the CSV **by row position**.
+5. **Check the contact sheet.** `python3 dextrous/01_Scripts/05_make_contact_sheet.py`, then open
    `dextrous/contact_sheet.html` and scroll: every name must match the art above it. This is the only
    check that catches the `DEX Cast` tab's row order drifting from `IN Cast`. Every other check
    still passes when that happens.
-7. **Check contrast.** `python3 dextrous/check_theme_contrast.py` must pass.
+6. **Check contrast.** `python3 dextrous/01_Scripts/06_check_theme_contrast.py` must pass.
 
-Icon size: in `CastRecruiter.html`, `--stat-icon-size` sets the prowess, fortitude and ether icons and `--dice-icon-size` the dice. The dice SVGs keep their blank space below for Dextrous; `build_svg_sprite.py` crops it off for the web app, so re-run step 4 after replacing a dice SVG.
+`99_extract_brand_palette.py` isn't part of any update: it's a one-off that re-reads the palette out of the branding PDF.
+
+Icon size: in `CastRecruiter.html`, `--stat-icon-size` sets the prowess, fortitude and ether icons and `--dice-icon-size` the dice. The dice SVGs keep their blank space below for Dextrous; `03_build_svg_sprite.py` crops it off for the web app, so re-run step 3 after replacing a dice SVG.
 
 ## Deploy
 
@@ -56,7 +66,7 @@ Icon size: in `CastRecruiter.html`, `--stat-icon-size` sets the prowess, fortitu
   the public URL:
   `clasp deploy -i AKfycbzJ_rRo1MT81RSvWaqHqFvRzJ9utCt0stRyWUT6TguOIscMNviKVxogu8qwfqyxaBbT`.
   **Never run a plain `clasp deploy`**: it creates a new public URL.
-- **TTS deck.** Copy the stamped `dextrous/MonuMentuM DD-MM-YYYY.json` into TTS's Saved Objects
+- **TTS deck.** Copy `dextrous/MonuMentuM DD-MM-YYYY - Processed.json` into TTS's Saved Objects
   folder, spawn it, and swap it for the old deck in the Cast zone.
 - **TTS models** (only if card IDs or classes changed). On the injector token, click
   *Inject IDs to Models*, then save the models bag.
