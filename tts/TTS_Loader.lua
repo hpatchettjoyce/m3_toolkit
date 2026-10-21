@@ -31,14 +31,16 @@ MAP_START_POS        = { x = -10, y = 0.21, z = 10 } -- Top-left corner spawn co
 -- Leave them as "XXXXXX" and "YYYYYY" to use the fallback raw coordinates instead.
 PLAYER_CONFIG = {
     [1] = { -- Player 1 (Red / Bottom)
-        character_zone_guid = "e493d9", -- Zone where characters are spawned face up (DO NOT EDIT)
+        cast_zone_guid      = "0b3e6a", -- Scripting zone for the character cards (row 1) and talismans (row 2)
+        character_zone_guid = "e493d9", -- Old layout zone; still cleared on reload if it is on the table
         special_zone_guid   = "XXXXXX", -- Zone where Special Actions are placed (Leave as "XXXXXX" to deal to hand instead)
         table_zone = { x = -15, y = 1.5, z = -5 },   -- Fallback coordinates if zone is not set
         special_dest = { x = -25, y = 2.0, z = -15 }, -- Fallback specials hand/dest area
         color = "Red"                                 -- TTS Player Seat color
     },
     [2] = { -- Player 2 (Blue / Top)
-        character_zone_guid = "7faf07", -- Zone where characters are spawned face up (DO NOT EDIT)
+        cast_zone_guid      = "b37844", -- Scripting zone for the character cards (row 1) and talismans (row 2)
+        character_zone_guid = "7faf07", -- Old layout zone; still cleared on reload if it is on the table
         special_zone_guid   = "YYYYYY", -- Zone where Special Actions are placed
         table_zone = { x = 15, y = 1.5, z = 5 },
         special_dest = { x = 25, y = 2.0, z = 15 },
@@ -51,6 +53,15 @@ SPAWN_HEIGHT_OFFSET = 3.0
 
 -- Time (in seconds) to wait between card spawns inside active layout zones
 ZONE_LAYOUT_DELAY = 0.3
+
+-- Card grid inside each cast zone. Row 1 is the row nearest the board (character cards), row 2
+-- sits behind it (talismans, each behind the character it is attached to). Spacing shrinks to fit
+-- if the zone is too narrow or shallow for these values.
+BOARD_CENTRE        = { x = 0, z = 0 } -- The map is centred on the table origin (see MAP_START_POS)
+CARD_COLUMN_SPACING = 2.6   -- Distance between card centres along a row
+CARD_ROW_SPACING    = 3.6   -- Distance between row centres
+CARD_DROP_HEIGHT    = 2.0   -- Minimum spawn height; cards drop onto the table from here
+CARD_YAW_OFFSET     = 0     -- Set to 180 if the cards come out upside down for the player
 
 -- =============== ONBOARDING SCENARIOS CONFIGURATION ===============
 -- Pre-configured cast lists for the learning scenarios (Task 5).
@@ -165,6 +176,7 @@ ONBOARDING_SCENARIOS = {
 -- Global tables for tracking match state and logged actions
 loadedCasts = {}          -- Loaded cast configurations keyed by player colour
 specialActionsLog = {}    -- Chronological record of Special Actions played
+spawnedObjects = {}       -- GUIDs of the cards and models each load put on the table, keyed by player colour
 
 -- Global tracking tables and JSON snapshots for map auto-deployment
 deployedMapTiles = {}
@@ -324,7 +336,16 @@ function clearPlayerWorkspace(playerNum)
         end
     end
     
-    -- 2. Clear character scripting zone
+    -- 2. Clear the cards and models the last load put on the table, wherever they are now
+    for _, guid in ipairs(spawnedObjects[color] or {}) do
+        local obj = getObjectFromGUID(guid)
+        if obj and not obj.isDestroyed() then
+            destroyObject(obj)
+        end
+    end
+    spawnedObjects[color] = {}
+
+    -- 3. Clear the old character layout zone, if it is still on the table
     if config.character_zone_guid and config.character_zone_guid ~= "XXXXXX" and config.character_zone_guid ~= "" then
         local zone = getObjectFromGUID(config.character_zone_guid)
         if zone then
@@ -378,31 +399,65 @@ function loadCastCoroutine()
     
     -- Reduced onboarding scenarios (Scenarios 1 & 2) should not load the Champion card/standee, or minion tokens (Tweak 2)
     local isReducedScenario = (castData.scenarioNum ~= nil and (castData.scenarioNum == 1 or castData.scenarioNum == 2))
-    
-    -- 2. Extract and deal Champion to Hand
-    local champName = castData.champion
-    local champId = castData.championId
-    if (champName or champId) and not isReducedScenario then
-        -- Fresh lookup to ensure valid Unity object references
+    local hasAutoMinion = (castData.dominion == "Iro-Si-Khar" or castData.dominion == "Ahèserec") and not isReducedScenario
+
+    -- Plan the cast zone grid: one column per character card in row 1 (champion, units, auto-summon
+    -- minion), with each talisman in row 2 behind the character it is attached to.
+    local unitIds = {}
+    for unitId, _ in pairs(castData.unitIdsRecruited or {}) do table.insert(unitIds, unitId) end
+    table.sort(unitIds) -- pairs() order is not stable; ID order groups each class together
+
+    local rowOneIds = {}
+    if castData.championId and castData.championId ~= "" and not isReducedScenario then
+        table.insert(rowOneIds, castData.championId)
+    end
+    for _, unitId in ipairs(unitIds) do table.insert(rowOneIds, unitId) end
+    if hasAutoMinion then
+        table.insert(rowOneIds, (castData.dominion == "Iro-Si-Khar") and "02IRO-04MIN-0048" or "05AHE-04MIN-0148")
+    end
+    local columnOf = {}
+    for i, id in ipairs(rowOneIds) do columnOf[id] = i end
+
+    local talismanColumns, columnCount = planTalismanColumns(castData.talismanIdsEquipped, columnOf, #rowOneIds)
+
+    local castZone = nil
+    if config.cast_zone_guid and config.cast_zone_guid ~= "" then
+        castZone = getObjectFromGUID(config.cast_zone_guid)
+    end
+    local grid = castZone and getCastZoneGrid(castZone, columnCount) or nil
+    if not grid then
+        broadcastToColor("Warning: cast zone " .. tostring(config.cast_zone_guid) .. " not found, so character and talisman cards go to your hand instead.", clickerColor, {1, 0.5, 0})
+    end
+
+    -- Places a card in its grid slot, or deals it to hand if there is no cast zone
+    local function placeCard(cardName, cardId, row, column)
         local castDeck = findCastDeck()
         if not castDeck then
-            broadcastToColor("Error: Cast deck vanished or was moved during loading.", clickerColor, {1,0,0})
-            isLoadingCast = false
-            return 1
+            print("Error: Cast deck vanished or was moved during loading.")
+            return
         end
-
+        local target, rotation, toHand = spawnPos, {0, 180, 180}, true
+        if grid then
+            target, rotation, toHand = grid.slot(row, column), grid.rotation, false
+        end
         isCloning = true
-        local success = cloneCardFromDeck(castDeck, champName, champId, spawnPos, {0, 180, 180}, config.color)
+        local success = cloneCardFromDeck(castDeck, cardName or "", cardId, target, rotation, config.color, toHand)
         if success then
-            -- Wait for the asynchronous clone callback to finish returning the card before proceeding!
             while isCloning do
                 coroutine.yield(0)
             end
             yieldSeconds(0.2)
         else
             isCloning = false
-            print("Warning: Champion card not found: " .. (champName or "Unnamed") .. " / " .. (champId or "No ID"))
+            print("Warning: card not found: " .. tostring(cardName or "") .. " (" .. tostring(cardId) .. ")")
         end
+    end
+
+    -- 2. Place the Champion card
+    local champName = castData.champion
+    local champId = castData.championId
+    if (champName or champId) and not isReducedScenario then
+        placeCard(champName, champId, 1, columnOf[champId] or 1)
     end
     
     -- 3. Extract Units, deal 1 Card to Hand, and spawn recruited Models
@@ -446,27 +501,13 @@ function loadCastCoroutine()
     end
 
     -- 3b. Loop and spawn recruited Unit Standees
-    if castData.unitIdsRecruited and next(castData.unitIdsRecruited) then
-        for unitId, qty in pairs(castData.unitIdsRecruited) do
+    if #unitIds > 0 then
+        for _, unitId in ipairs(unitIds) do
+            local qty = castData.unitIdsRecruited[unitId]
             unitIndex = unitIndex + 1
-            local castDeck = findCastDeck()
-            if not castDeck then
-                print("Error: Cast deck vanished during units loop.")
-                break
-            end
 
-            -- Clone Card to Hand
-            isCloning = true
-            local success = cloneCardFromDeck(castDeck, "", unitId, spawnPos, {0, 180, 180}, config.color)
-            if success then
-                while isCloning do
-                    coroutine.yield(0)
-                end
-                yieldSeconds(0.2)
-            else
-                isCloning = false
-                print("Warning: Unit card ID not found: " .. unitId)
-            end
+            -- Place the unit's card in its column of row 1
+            placeCard("", unitId, 1, columnOf[unitId])
 
             -- Clone 3D Models to Layout Zone
             if modelsBag and qty and qty > 0 then
@@ -534,47 +575,16 @@ function loadCastCoroutine()
         end
     end
     
-    -- 4. Extract and deal Talismans to Hand (Task 4)
-    if castData.talismanIdsEquipped and next(castData.talismanIdsEquipped) then
-        for talId, attachment in pairs(castData.talismanIdsEquipped) do
-            local castDeck = findCastDeck()
-            if not castDeck then
-                print("Error: Cast deck vanished during talismans loop.")
-                break
-            end
-
-            isCloning = true
-            local success = cloneCardFromDeck(castDeck, "", talId, spawnPos, {0, 180, 180}, config.color)
-            if success then
-                while isCloning do
-                    coroutine.yield(0)
-                end
-                yieldSeconds(0.2)
-            else
-                isCloning = false
-                print("Warning: Talisman card ID not found: " .. talId)
-            end
-        end
+    -- 4. Place each Talisman in row 2, behind the character it is attached to
+    for _, entry in ipairs(talismanColumns) do
+        placeCard("", entry.id, 2, entry.column)
     end
     
-    -- 4.5 Auto-Summon Minions (Task 1)
-    if (castData.dominion == "Iro-Si-Khar" or castData.dominion == "Ahèserec") and not isReducedScenario then
+    -- 4.5 Auto-Summon Minion card (Task 1), last column of row 1
+    if hasAutoMinion then
         local minionName = (castData.dominion == "Iro-Si-Khar") and "Driplet" or "Huskling"
         local minionId = (castData.dominion == "Iro-Si-Khar") and "02IRO-04MIN-0048" or "05AHE-04MIN-0148"
-        local castDeck = findCastDeck()
-        if castDeck then
-            isCloning = true
-            local success = cloneCardFromDeck(castDeck, minionName, minionId, spawnPos, {0, 180, 180}, config.color)
-            if success then
-                while isCloning do
-                    coroutine.yield(0)
-                end
-                yieldSeconds(0.2)
-            else
-                isCloning = false
-                print("Warning: Auto-summon minion card not found: " .. minionName .. " (" .. minionId .. ")")
-            end
-        end
+        placeCard(minionName, minionId, 1, columnOf[minionId])
     end
     
     -- 5. Extract and deal Special Action cards to player's Hand (Task 4)
@@ -587,7 +597,7 @@ function loadCastCoroutine()
             end
 
             isCloning = true
-            local success = cloneCardFromDeck(castDeck, "", specId, spawnPos, {0, 180, 180}, config.color)
+            local success = cloneCardFromDeck(castDeck, "", specId, spawnPos, {0, 180, 180}, config.color, true)
             if success then
                 while isCloning do
                     coroutine.yield(0)
@@ -631,7 +641,8 @@ function findCastDeck()
 end
 
 -- Core Function: Clones a specific card by name OR unique ID (GM Notes) from a deck, and drops original back
-function cloneCardFromDeck(deck, cardName, cardId, targetPos, targetRot, playerColor)
+-- toHand = true deals the clone to the player's hand; false leaves it where it spawned (a cast zone slot)
+function cloneCardFromDeck(deck, cardName, cardId, targetPos, targetRot, playerColor, toHand)
     -- Handle single Card container vs Deck container
     if deck.type == "Card" then
         local matched = false
@@ -651,11 +662,14 @@ function cloneCardFromDeck(deck, cardName, cardId, targetPos, targetRot, playerC
                 position = {x = targetPos.x, y = targetPos.y, z = targetPos.z},
                 rotation = targetRot
             })
-            Wait.frames(function()
-                if clonedObj ~= nil and not clonedObj.isDestroyed() then
-                    clonedObj.deal(1, playerColor)
-                end
-            end, 2)
+            if toHand then
+                Wait.frames(function()
+                    if clonedObj ~= nil and not clonedObj.isDestroyed() then
+                        clonedObj.deal(1, playerColor)
+                    end
+                end, 2)
+            end
+            if not toHand then trackSpawned(playerColor, clonedObj) end -- hand cards are cleared with the hand
             -- Release coroutine immediately for single cards
             isCloning = false
             return true
@@ -693,12 +707,16 @@ function cloneCardFromDeck(deck, cardName, cardId, targetPos, targetRot, playerC
                         rotation = targetRot
                     })
                     
-                    -- Deal the clone directly into the player's Hand after a small frame delay
-                    Wait.frames(function()
-                        if clonedObj ~= nil and not clonedObj.isDestroyed() then
-                            clonedObj.deal(1, playerColor)
-                        end
-                    end, 2)
+                    if not toHand then trackSpawned(playerColor, clonedObj) end -- hand cards are cleared with the hand
+
+                    -- Deal the clone into the player's Hand after a small frame delay, unless it was placed in a zone
+                    if toHand then
+                        Wait.frames(function()
+                            if clonedObj ~= nil and not clonedObj.isDestroyed() then
+                                clonedObj.deal(1, playerColor)
+                            end
+                        end, 2)
+                    end
                     
                     -- Return original card to the deck after a 3-frame delay to let clone spawn safely first
                     Wait.frames(function()
@@ -751,7 +769,8 @@ end
 function onSave()
     return JSON.encode({
         loadedCasts = loadedCasts,
-        specialActionsLog = specialActionsLog
+        specialActionsLog = specialActionsLog,
+        spawnedObjects = spawnedObjects
     })
 end
 
@@ -765,6 +784,7 @@ function restoreMatchData(saved_data)
     end
     loadedCasts = saved.loadedCasts or {}
     specialActionsLog = saved.specialActionsLog or {}
+    spawnedObjects = saved.spawnedObjects or {}
 
     local colours = {}
     for colour, _ in pairs(loadedCasts) do table.insert(colours, colour) end
@@ -805,6 +825,90 @@ function getBagFromZone(zoneGuid)
         end
     end
     return nil
+end
+
+-- Records a card or model this load put on the table, so the next load for that player can clear it
+function trackSpawned(playerColor, obj)
+    if playerColor == nil or obj == nil then return end
+    spawnedObjects[playerColor] = spawnedObjects[playerColor] or {}
+    table.insert(spawnedObjects[playerColor], obj.getGUID())
+end
+
+-- Works out each talisman's column in row 2: behind the character it is attached to, or else the
+-- next column no other talisman uses. Returns the placements and the number of columns needed.
+function planTalismanColumns(talismanIdsEquipped, columnOf, rowOneCount)
+    local placements, used, loose = {}, {}, {}
+    local talIds = {}
+    for talId, _ in pairs(talismanIdsEquipped or {}) do table.insert(talIds, talId) end
+    table.sort(talIds)
+
+    for _, talId in ipairs(talIds) do
+        local attachment = talismanIdsEquipped[talId] or ""
+        local attachedId = attachment:match("Attached to:%s*(.-)%s*$")
+        local column = attachedId and columnOf[attachedId]
+        if column and not used[column] then
+            used[column] = true
+            table.insert(placements, { id = talId, column = column })
+        else
+            table.insert(loose, talId)
+        end
+    end
+
+    local columnCount = math.max(rowOneCount, 1)
+    local nextColumn = 1
+    for _, talId in ipairs(loose) do
+        while used[nextColumn] do nextColumn = nextColumn + 1 end
+        used[nextColumn] = true
+        table.insert(placements, { id = talId, column = nextColumn })
+        columnCount = math.max(columnCount, nextColumn)
+    end
+    return placements, columnCount
+end
+
+-- Lays a grid of card slots over a cast zone. "Depth" runs from the back of the zone towards the
+-- board (BOARD_CENTRE), so row 1 is the row nearest the board whichever way the zone faces, and
+-- column 1 is on the player's left as they face the board.
+function getCastZoneGrid(zone, columnCount)
+    local centre = zone.getPosition()
+    local size = zone.getScale() -- a scripting zone's scale is its size
+    local right = zone.getTransformRight()
+    local forward = zone.getTransformForward()
+
+    local toBoardX, toBoardZ = BOARD_CENTRE.x - centre.x, BOARD_CENTRE.z - centre.z
+    local dotRight = right.x * toBoardX + right.z * toBoardZ
+    local dotForward = forward.x * toBoardX + forward.z * toBoardZ
+
+    -- Use whichever zone axis points most towards the board as the depth axis
+    local depth, depthLength, widthLength
+    if math.abs(dotForward) >= math.abs(dotRight) then
+        depth = (dotForward >= 0) and { x = forward.x, z = forward.z } or { x = -forward.x, z = -forward.z }
+        depthLength, widthLength = size.z, size.x
+    else
+        depth = (dotRight >= 0) and { x = right.x, z = right.z } or { x = -right.x, z = -right.z }
+        depthLength, widthLength = size.x, size.z
+    end
+    -- The player's right as they face the board
+    local across = { x = depth.z, z = -depth.x }
+
+    local columnSpacing = math.min(CARD_COLUMN_SPACING, widthLength / math.max(columnCount, 1))
+    local rowSpacing = math.min(CARD_ROW_SPACING, depthLength / 2)
+    local spawnY = math.max(centre.y, CARD_DROP_HEIGHT)
+
+    -- Card tops point at the board: a card at yaw 180 reads upright with its top towards +z
+    local yaw = math.deg(math.atan2(-depth.x, -depth.z)) + CARD_YAW_OFFSET
+
+    return {
+        rotation = { 0, yaw, 0 },
+        slot = function(row, column)
+            local acrossOffset = (column - (columnCount + 1) / 2) * columnSpacing
+            local depthOffset = depthLength / 2 - rowSpacing * (row - 0.5)
+            return {
+                x = centre.x + across.x * acrossOffset + depth.x * depthOffset,
+                y = spawnY,
+                z = centre.z + across.z * acrossOffset + depth.z * depthOffset
+            }
+        end
+    }
 end
 
 -- Get central physical spawn position for models
@@ -858,6 +962,7 @@ function cloneModelFromBag(bag, modelId, qty, targetPos, targetRot, xDirection, 
                         if playerColor and clonedObj ~= nil then
                             clonedObj.setColorTint(playerColor)
                         end
+                        trackSpawned(playerColor, clonedObj)
                     end
                     
                     -- Return original model to the bag after a small frame delay to let clones spawn safely first
