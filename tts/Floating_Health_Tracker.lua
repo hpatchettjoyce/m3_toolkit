@@ -73,7 +73,9 @@ STANDEE_CONFIG = {
 NUMERAL_PLATE_WIDTH  = 70
 NUMERAL_PLATE_HEIGHT = 46
 NUMERAL_FONT_SIZE    = 30
-NUMERAL_COLOUR       = "#e4a557" -- GOLD STONE from the brand palette
+NUMERAL_COLOUR       = "#e4a557" -- GOLD STONE, from the M3 Branding Guide
+NUMERAL_FILL         = "#041212" -- OFF-BLACK
+NUMERAL_OUTLINE      = "#374141" -- The guide's grey accent
 STANDEE_NUMERAL_HEIGHT  = 60     -- Height of the plate's centre above the standee's base
 STANDEE_NUMERAL_OFFSET  = 12     -- Distance in front of each face; raise it if the plate clips into the figure
 STANDEE_NUMERAL_FRONT   = "-90 0 0"  -- Upright, facing one side of the standee...
@@ -239,10 +241,10 @@ function numeralPlatesXml(tileActiveState)
     if copyNumeral == "" then return "" end
     local function plate(id, position, rotation, active)
         return string.format([[
-<Panel id="%s" width="%d" height="%d" position="%s" rotation="%s" active="%s" color="#111c24e6" outline="#2c3e50" outlineSize="2">
+<Panel id="%s" width="%d" height="%d" position="%s" rotation="%s" active="%s" color="%s" outline="%s" outlineSize="2">
     <Text fontStyle="Bold" fontSize="%d" color="%s" alignment="MiddleCenter">%s</Text>
 </Panel>
-]], id, NUMERAL_PLATE_WIDTH, NUMERAL_PLATE_HEIGHT, position, rotation, active, NUMERAL_FONT_SIZE, NUMERAL_COLOUR, copyNumeral)
+]], id, NUMERAL_PLATE_WIDTH, NUMERAL_PLATE_HEIGHT, position, rotation, active, NUMERAL_FILL, NUMERAL_OUTLINE, NUMERAL_FONT_SIZE, NUMERAL_COLOUR, copyNumeral)
     end
     if isTileObject then
         return plate("copyNumeralPlate", "0 0 -" .. TILE_NUMERAL_LIFT, "0 0 180", tileActiveState)

@@ -72,8 +72,10 @@ MODEL_SPREAD_MAX    = 2.4   -- Copies never spread further than this, so they st
 ROMAN_NUMERALS        = { "I", "II", "III" }
 CARD_NUMERAL_SIDE     = 1         -- Which end of the card the plate sits at: 1 is the bottom, the player's end (seen in TTS, 2026-10-21)
 CARD_NUMERAL_GAP      = 12        -- Gap between the card's bottom edge and the plate, in UI units (100 per unit of card length)
-CARD_NUMERAL_LIFT     = 10        -- Height of the plate above the card's face, in the same units (the card's own thickness is added)
-CARD_NUMERAL_ROTATION = "0 0 180" -- Flat on the card, as the health tracker lies on a tile; try "0 0 0" if the numeral reads upside down
+CARD_NUMERAL_LIFT     = 20        -- Height of the plate above the card's face, in the same units (the card's own thickness is added)
+CARD_NUMERAL_FILL     = "#041212" -- OFF-BLACK, from the M3 Branding Guide
+CARD_NUMERAL_OUTLINE  = "#374141" -- The guide's grey accent
+CARD_NUMERAL_COLOUR   = "#e4a557" -- GOLD STONE
 CARD_NUMERAL_WIDTH    = 110       -- Same size as the numeral plate above each model's health tracker
 CARD_NUMERAL_HEIGHT   = 64
 
@@ -943,10 +945,17 @@ function cardNumeralXml(card, numeral)
     -- Measured from the card's centre, so clear half its thickness or the plate is hidden inside it
     local lift = math.floor(bounds.size.y / scale.y * 50 + CARD_NUMERAL_LIFT + 0.5)
     local offset = math.floor(CARD_NUMERAL_SIDE * (length * 50 - CARD_NUMERAL_HEIGHT / 2 - CARD_NUMERAL_GAP) + 0.5)
-    return string.format([[
-<Panel width="%d" height="%d" position="0 %d -%d" rotation="%s" color="#111c24e6" outline="#2c3e50" outlineSize="2">
-    <Text fontStyle="Bold" fontSize="40" color="#e4a557" alignment="MiddleCenter">%s</Text>
-</Panel>]], CARD_NUMERAL_WIDTH, CARD_NUMERAL_HEIGHT, offset, lift, CARD_NUMERAL_ROTATION, numeral)
+    -- One plate each side of the card: it isn't certain which way a card's UI counts as up (a plate
+    -- sitting just above the card's centre never showed), and the one under the face is hidden by
+    -- the card. I, II and III read the same mirrored or turned, so either plate reads correctly.
+    local function plate(z, rotation)
+        return string.format([[
+<Panel width="%d" height="%d" position="0 %d %d" rotation="%s" color="%s" outline="%s" outlineSize="2">
+    <Text fontStyle="Bold" fontSize="40" color="%s" alignment="MiddleCenter">%s</Text>
+</Panel>]], CARD_NUMERAL_WIDTH, CARD_NUMERAL_HEIGHT, offset, z, rotation,
+            CARD_NUMERAL_FILL, CARD_NUMERAL_OUTLINE, CARD_NUMERAL_COLOUR, numeral)
+    end
+    return plate(-lift, "0 0 180") .. "\n" .. plate(lift, "0 180 180")
 end
 
 -- Get central physical spawn position for models
