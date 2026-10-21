@@ -182,8 +182,12 @@ local isCloning = false
 -- coroutine per object, but a second click while loading fails silently without this check)
 local isLoadingCast = false
 
-function onLoad()
+function onLoad(saved_data)
     print("Monumentum Cast Loader initialised.")
+
+    -- Restore the match record saved with the table, so a crash, rewind or reload mid-game
+    -- doesn't leave End Game with no casts to submit (2026-10-08 playtest).
+    restoreMatchData(saved_data)
     self.setName("Monumentum Cast Loader")
     self.setDescription("Drafts your Cast lists on the table using zones.")
     
@@ -741,6 +745,41 @@ function logSpecialAction(playerColour, cardName, cardId)
     }
     table.insert(specialActionsLog, entry)
     print("Logged Special Action: " .. tostring(cardName) .. " (" .. tostring(cardId) .. ") played by " .. tostring(playerColour))
+end
+
+-- Saves the match record with the table. TTS calls this on every save, autosave and rewind point.
+function onSave()
+    return JSON.encode({
+        loadedCasts = loadedCasts,
+        specialActionsLog = specialActionsLog
+    })
+end
+
+-- Reads back what onSave stored. An empty or unreadable save leaves a fresh, empty record.
+function restoreMatchData(saved_data)
+    if saved_data == nil or saved_data == "" then return end
+    local success, saved = pcall(function() return JSON.decode(saved_data) end)
+    if not success or type(saved) ~= "table" then
+        print("Warning: could not read the saved match record; starting with no casts loaded.")
+        return
+    end
+    loadedCasts = saved.loadedCasts or {}
+    specialActionsLog = saved.specialActionsLog or {}
+
+    local colours = {}
+    for colour, _ in pairs(loadedCasts) do table.insert(colours, colour) end
+    if #colours > 0 then
+        table.sort(colours)
+        print("Restored the loaded casts for " .. table.concat(colours, " and ") .. ", and " .. #specialActionsLog .. " logged Special Action(s).")
+    end
+end
+
+-- Empties the match record once a game has been submitted, so the next game starts clean.
+-- Called by the End Game Controller after a successful submission.
+function clearMatchData()
+    loadedCasts = {}
+    specialActionsLog = {}
+    print("Match record cleared for the next game.")
 end
 
 -- Exposes match data as a JSON string to avoid Tabletop Simulator cross-script sandboxing/ownership errors

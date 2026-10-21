@@ -111,6 +111,15 @@ function submitGame(player_color)
         return
     end
     
+    -- Warn about any seat with no cast loaded. Submit anyway: reloading a cast now would clear
+    -- that player's hand and models mid-game, and the row can be completed by hand in IN TTS.
+    local casts = matchData.loadedCasts or {}
+    for _, colour in ipairs({"Red", "Blue"}) do
+        if casts[colour] == nil then
+            broadcastToAll("Warning: no cast is loaded for " .. colour .. ", so its cast will be blank in IN TTS. Add it there by hand.", {1, 0.5, 0})
+        end
+    end
+
     broadcastToAll("Submitting game results to the Google Web App...", {0.9, 0.9, 0.2})
     
     -- Compile the final payload
@@ -155,6 +164,12 @@ function submitGame(player_color)
                 broadcastToAll("Please ensure the Web App is deployed with 'Who has access' set to 'Anyone'.", {1, 0.5, 0})
             else
                 broadcastToAll("Success: Game results successfully submitted and logged!", {0.1, 0.9, 0.1})
+
+                -- Start the next game with an empty match record (casts and Special Action log)
+                local loader = getObjectFromGUID(CAST_LOADER_GUID)
+                if loader then
+                    pcall(function() loader.call("clearMatchData") end)
+                end
             end
         end
         -- Reset the winner state
