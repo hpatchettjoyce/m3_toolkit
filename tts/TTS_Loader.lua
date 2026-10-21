@@ -564,11 +564,17 @@ function loadCastCoroutine()
         end
     end
 
-    -- 3c. Auto-Spawn 12 Stacked Minions (Driplet / Huskling Lot for Iro-Si-Khar & Ahèserec) (Tweak 2)
-    if (castData.dominion == "Iro-Si-Khar" or castData.dominion == "Ahèserec") and not isReducedScenario then
+    -- 3c. Auto-Summon Minion card (Task 1), last column of row 1, then 12 stacked Minions on it
+    -- (Driplet / Huskling Lot for Iro-Si-Khar & Ahèserec) (Tweak 2). The card goes down first, as
+    -- every other card does, so the stack lands on top of it.
+    if hasAutoMinion then
+        local minionName = (castData.dominion == "Iro-Si-Khar") and "Driplet" or "Huskling"
+        local minionId = (castData.dominion == "Iro-Si-Khar") and "02IRO-04MIN-0048" or "05AHE-04MIN-0148"
+        placeCard(minionName, minionId, 1, columnOf[minionId])
+        yieldSeconds(0.3) -- let the card settle: the bottom token spawns at the height the card drops from
+
         if modelsBag then
             unitIndex = unitIndex + 1
-            local minionId = (castData.dominion == "Iro-Si-Khar") and "02IRO-04MIN-0048" or "05AHE-04MIN-0148"
             local minionSpawnPos, step = modelPlacement(slotOf[minionId], 1, unitIndex)
 
             isCloning = true
@@ -593,12 +599,6 @@ function loadCastCoroutine()
         end
     end
     
-    -- 4.5 Auto-Summon Minion card (Task 1), last column of row 1
-    if hasAutoMinion then
-        local minionName = (castData.dominion == "Iro-Si-Khar") and "Driplet" or "Huskling"
-        local minionId = (castData.dominion == "Iro-Si-Khar") and "02IRO-04MIN-0048" or "05AHE-04MIN-0148"
-        placeCard(minionName, minionId, 1, columnOf[minionId])
-    end
     
     -- 5. Extract and deal Special Action cards to player's Hand (Task 4)
     if castData.specialIds and #castData.specialIds > 0 then
