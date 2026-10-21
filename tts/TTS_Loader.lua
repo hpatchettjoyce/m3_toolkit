@@ -62,6 +62,8 @@ CARD_COLUMN_SPACING = 2.6   -- Distance between card centres along a row
 CARD_ROW_SPACING    = 3.6   -- Distance between row centres
 CARD_DROP_HEIGHT    = 2.0   -- Minimum spawn height; cards drop onto the table from here
 CARD_YAW_OFFSET     = 0     -- Set to 180 if the cards come out upside down for the player
+MODEL_SPACING       = 1.8   -- Distance between copies of one model; they spread along their card
+MODEL_SPREAD_MAX    = 2.4   -- Copies never spread further than this, so they stay on the card
 
 -- =============== ONBOARDING SCENARIOS CONFIGURATION ===============
 -- Pre-configured cast lists for the learning scenarios (Task 5).
@@ -453,6 +455,30 @@ function loadCastCoroutine()
         end
     end
 
+    -- Where a character's models go: centred on its card in row 1, copies spread along the card's
+    -- length. Without a cast zone, the old side-of-table column (one row per character) is used.
+    local function modelPlacement(column, qty, sideIndex)
+        if grid then
+            local centre = grid.slot(1, column)
+            local spacing = 0
+            if qty > 1 then spacing = math.min(MODEL_SPACING, MODEL_SPREAD_MAX / (qty - 1)) end
+            local back = spacing * (qty - 1) / 2
+            return {
+                x = centre.x - grid.depth.x * back,
+                y = centre.y,
+                z = centre.z - grid.depth.z * back
+            }, { x = grid.depth.x * spacing, z = grid.depth.z * spacing }
+        end
+        local spawnTarget = getSpawnPositionForModels(config)
+        local xDirection = (config.color == "Red") and 1 or -1
+        local zDirection = (config.color == "Red") and -1 or 1
+        return {
+            x = (config.color == "Red") and -23.5 or 23.5,
+            y = spawnTarget.y,
+            z = ((config.color == "Red") and -5.0 or 5.0) + (sideIndex * 2.5 * zDirection)
+        }, { x = 1.8 * xDirection, z = 0 }
+    end
+
     -- 2. Place the Champion card
     local champName = castData.champion
     local champId = castData.championId
@@ -472,23 +498,11 @@ function loadCastCoroutine()
     local champId = castData.championId
     if champId and champId ~= "" and not isReducedScenario and modelsBag then
         unitIndex = unitIndex + 1
-        local spawnTarget = getSpawnPositionForModels(config)
-        
-        local xStart = (config.color == "Red") and -23.5 or 23.5
-        local zStart = (config.color == "Red") and -5.0 or 5.0
-        local xDirection = (config.color == "Red") and 1 or -1
-        local zDirection = (config.color == "Red") and -1 or 1
-        local zSpacing = 2.5
-        
-        local unitSpawnPos = {
-            x = xStart,
-            y = spawnTarget.y,
-            z = zStart + (unitIndex * zSpacing * zDirection)
-        }
+        local unitSpawnPos, step = modelPlacement(columnOf[champId] or 1, 1, unitIndex)
 
         isCloning = true
-        -- Spawn exactly 1 copy of the Champion standee
-        local modelSuccess = cloneModelFromBag(modelsBag, champId, 1, unitSpawnPos, targetModelRot, xDirection, false, config.color)
+        -- Spawn exactly 1 copy of the Champion standee, on the Champion card
+        local modelSuccess = cloneModelFromBag(modelsBag, champId, 1, unitSpawnPos, targetModelRot, step, false, config.color)
         if modelSuccess then
             while isCloning do
                 coroutine.yield(0)
@@ -509,25 +523,13 @@ function loadCastCoroutine()
             -- Place the unit's card in its column of row 1
             placeCard("", unitId, 1, columnOf[unitId])
 
-            -- Clone 3D Models to Layout Zone
+            -- Clone the unit's models onto its card
             if modelsBag and qty and qty > 0 then
-                local spawnTarget = getSpawnPositionForModels(config)
-                
-                local xStart = (config.color == "Red") and -23.5 or 23.5
-                local zStart = (config.color == "Red") and -5.0 or 5.0
-                local xDirection = (config.color == "Red") and 1 or -1
-                local zDirection = (config.color == "Red") and -1 or 1
-                local zSpacing = 2.5
-                
-                local unitSpawnPos = {
-                    x = xStart,
-                    y = spawnTarget.y,
-                    z = zStart + (unitIndex * zSpacing * zDirection)
-                }
+                local unitSpawnPos, step = modelPlacement(columnOf[unitId], qty, unitIndex)
 
                 isCloning = true
                 -- Rotate standees around Y so they face the players directly
-                local modelSuccess = cloneModelFromBag(modelsBag, unitId, qty, unitSpawnPos, targetModelRot, xDirection, false, config.color)
+                local modelSuccess = cloneModelFromBag(modelsBag, unitId, qty, unitSpawnPos, targetModelRot, step, false, config.color)
                 if modelSuccess then
                     while isCloning do
                         coroutine.yield(0)
@@ -546,23 +548,11 @@ function loadCastCoroutine()
         if modelsBag then
             unitIndex = unitIndex + 1
             local minionId = (castData.dominion == "Iro-Si-Khar") and "02IRO-04MIN-0048" or "05AHE-04MIN-0148"
-            local spawnTarget = getSpawnPositionForModels(config)
-            
-            local xStart = (config.color == "Red") and -23.5 or 23.5
-            local zStart = (config.color == "Red") and -5.0 or 5.0
-            local xDirection = (config.color == "Red") and 1 or -1
-            local zDirection = (config.color == "Red") and -1 or 1
-            local zSpacing = 2.5
-            
-            local minionSpawnPos = {
-                x = xStart,
-                y = spawnTarget.y,
-                z = zStart + (unitIndex * zSpacing * zDirection)
-            }
+            local minionSpawnPos, step = modelPlacement(columnOf[minionId], 1, unitIndex)
 
             isCloning = true
-            -- Spawn exactly 12 copies and stack them vertically (isStacked = true)
-            local modelSuccess = cloneModelFromBag(modelsBag, minionId, 12, minionSpawnPos, targetModelRot, xDirection, true, config.color)
+            -- Spawn exactly 12 copies stacked vertically on the minion card (isStacked = true)
+            local modelSuccess = cloneModelFromBag(modelsBag, minionId, 12, minionSpawnPos, targetModelRot, step, true, config.color)
             if modelSuccess then
                 while isCloning do
                     coroutine.yield(0)
@@ -899,6 +889,7 @@ function getCastZoneGrid(zone, columnCount)
 
     return {
         rotation = { 0, yaw, 0 },
+        depth = depth, -- unit vector from the back of the zone towards the board
         slot = function(row, column)
             local acrossOffset = (column - (columnCount + 1) / 2) * columnSpacing
             local depthOffset = depthLength / 2 - rowSpacing * (row - 0.5)
@@ -922,8 +913,9 @@ function getSpawnPositionForModels(config)
     return config.table_zone
 end
 
--- Core Function: Clones a specific model by ID from a bag N times, arranging them to the right, and returns original to the bag
-function cloneModelFromBag(bag, modelId, qty, targetPos, targetRot, xDirection, isStacked, playerColor)
+-- Core Function: Clones a specific model by ID from a bag N times, each copy one step on from the last
+-- (step = {x, z}), and returns the original to the bag
+function cloneModelFromBag(bag, modelId, qty, targetPos, targetRot, step, isStacked, playerColor)
     if not bag then return false end
     
     for _, objInfo in ipairs(bag.getObjects()) do
@@ -946,11 +938,11 @@ function cloneModelFromBag(bag, modelId, qty, targetPos, targetRot, xDirection, 
                                 z = targetPos.z
                             }
                         else
-                            -- Place models: first copy at targetPos.x, subsequent copies build inwards
+                            -- Place models: first copy at targetPos, each later copy one step on
                             modelPos = {
-                                x = targetPos.x + ((q - 1) * 1.8 * xDirection),
+                                x = targetPos.x + ((q - 1) * step.x),
                                 y = targetPos.y,
-                                z = targetPos.z
+                                z = targetPos.z + ((q - 1) * step.z)
                             }
                         end
                         
