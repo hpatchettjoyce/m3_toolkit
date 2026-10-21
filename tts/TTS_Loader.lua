@@ -403,24 +403,44 @@ function loadCastCoroutine()
     local isReducedScenario = (castData.scenarioNum ~= nil and (castData.scenarioNum == 1 or castData.scenarioNum == 2))
     local hasAutoMinion = (castData.dominion == "Iro-Si-Khar" or castData.dominion == "Ahèserec") and not isReducedScenario
 
-    -- Plan the cast zone grid: one column per character card in row 1 (champion, units, auto-summon
-    -- minion), with each talisman in row 2 behind the character it is attached to.
+    -- Plan the cast zone grid: one column per character card in row 1 (champion, familiars, auto-summon
+    -- minion). Row 2 holds what belongs to a row-1 character: loyal companions behind their champion,
+    -- then each talisman behind the character it is attached to.
     local unitIds = {}
     for unitId, _ in pairs(castData.unitIdsRecruited or {}) do table.insert(unitIds, unitId) end
     table.sort(unitIds) -- pairs() order is not stable; ID order groups each class together
 
-    local rowOneIds = {}
-    if castData.championId and castData.championId ~= "" and not isReducedScenario then
-        table.insert(rowOneIds, castData.championId)
+    local champInRowOne = castData.championId and castData.championId ~= "" and not isReducedScenario
+    local rowOneIds, rowTwoEntries = {}, {}
+    if champInRowOne then table.insert(rowOneIds, castData.championId) end
+    for _, unitId in ipairs(unitIds) do
+        -- Loyal companions (class code 02COM in the ID) sit behind their champion, like a talisman for them
+        if champInRowOne and unitId:find("%-02COM%-") then
+            table.insert(rowTwoEntries, { id = unitId, attachedId = castData.championId })
+        else
+            table.insert(rowOneIds, unitId)
+        end
     end
-    for _, unitId in ipairs(unitIds) do table.insert(rowOneIds, unitId) end
     if hasAutoMinion then
         table.insert(rowOneIds, (castData.dominion == "Iro-Si-Khar") and "02IRO-04MIN-0048" or "05AHE-04MIN-0148")
     end
     local columnOf = {}
     for i, id in ipairs(rowOneIds) do columnOf[id] = i end
 
-    local talismanColumns, columnCount = planTalismanColumns(castData.talismanIdsEquipped, columnOf, #rowOneIds)
+    local talIds = {}
+    for talId, _ in pairs(castData.talismanIdsEquipped or {}) do table.insert(talIds, talId) end
+    table.sort(talIds)
+    for _, talId in ipairs(talIds) do
+        local attachment = castData.talismanIdsEquipped[talId] or ""
+        table.insert(rowTwoEntries, { id = talId, attachedId = attachment:match("Attached to:%s*(.-)%s*$"), isTalisman = true })
+    end
+
+    local rowTwoPlacements, columnCount = planRowTwoColumns(rowTwoEntries, columnOf, #rowOneIds)
+
+    -- Every card's slot, so a unit's card and models go to the same place whichever row it is in
+    local slotOf = {}
+    for id, column in pairs(columnOf) do slotOf[id] = { row = 1, column = column } end
+    for _, p in ipairs(rowTwoPlacements) do slotOf[p.id] = { row = 2, column = p.column } end
 
     local castZone = nil
     if config.cast_zone_guid and config.cast_zone_guid ~= "" then
@@ -455,11 +475,11 @@ function loadCastCoroutine()
         end
     end
 
-    -- Where a character's models go: centred on its card in row 1, copies spread along the card's
-    -- length. Without a cast zone, the old side-of-table column (one row per character) is used.
-    local function modelPlacement(column, qty, sideIndex)
-        if grid then
-            local centre = grid.slot(1, column)
+    -- Where a character's models go: centred on its card, copies spread along the card's length.
+    -- Without a cast zone, the old side-of-table column (one row per character) is used.
+    local function modelPlacement(slot, qty, sideIndex)
+        if grid and slot then
+            local centre = grid.slot(slot.row, slot.column)
             local spacing = 0
             if qty > 1 then spacing = math.min(MODEL_SPACING, MODEL_SPREAD_MAX / (qty - 1)) end
             local back = spacing * (qty - 1) / 2
@@ -498,7 +518,7 @@ function loadCastCoroutine()
     local champId = castData.championId
     if champId and champId ~= "" and not isReducedScenario and modelsBag then
         unitIndex = unitIndex + 1
-        local unitSpawnPos, step = modelPlacement(columnOf[champId] or 1, 1, unitIndex)
+        local unitSpawnPos, step = modelPlacement(slotOf[champId] or { row = 1, column = 1 }, 1, unitIndex)
 
         isCloning = true
         -- Spawn exactly 1 copy of the Champion standee, on the Champion card
@@ -520,12 +540,13 @@ function loadCastCoroutine()
             local qty = castData.unitIdsRecruited[unitId]
             unitIndex = unitIndex + 1
 
-            -- Place the unit's card in its column of row 1
-            placeCard("", unitId, 1, columnOf[unitId])
+            -- Place the unit's card in its slot (row 2 for a loyal companion)
+            local slot = slotOf[unitId]
+            placeCard("", unitId, slot.row, slot.column)
 
             -- Clone the unit's models onto its card
             if modelsBag and qty and qty > 0 then
-                local unitSpawnPos, step = modelPlacement(columnOf[unitId], qty, unitIndex)
+                local unitSpawnPos, step = modelPlacement(slotOf[unitId], qty, unitIndex)
 
                 isCloning = true
                 -- Rotate standees around Y so they face the players directly
@@ -548,7 +569,7 @@ function loadCastCoroutine()
         if modelsBag then
             unitIndex = unitIndex + 1
             local minionId = (castData.dominion == "Iro-Si-Khar") and "02IRO-04MIN-0048" or "05AHE-04MIN-0148"
-            local minionSpawnPos, step = modelPlacement(columnOf[minionId], 1, unitIndex)
+            local minionSpawnPos, step = modelPlacement(slotOf[minionId], 1, unitIndex)
 
             isCloning = true
             -- Spawn exactly 12 copies stacked vertically on the minion card (isStacked = true)
@@ -566,8 +587,10 @@ function loadCastCoroutine()
     end
     
     -- 4. Place each Talisman in row 2, behind the character it is attached to
-    for _, entry in ipairs(talismanColumns) do
-        placeCard("", entry.id, 2, entry.column)
+    for _, entry in ipairs(rowTwoPlacements) do
+        if entry.isTalisman then
+            placeCard("", entry.id, 2, entry.column)
+        end
     end
     
     -- 4.5 Auto-Summon Minion card (Task 1), last column of row 1
@@ -824,32 +847,27 @@ function trackSpawned(playerColor, obj)
     table.insert(spawnedObjects[playerColor], obj.getGUID())
 end
 
--- Works out each talisman's column in row 2: behind the character it is attached to, or else the
--- next column no other talisman uses. Returns the placements and the number of columns needed.
-function planTalismanColumns(talismanIdsEquipped, columnOf, rowOneCount)
+-- Works out each row-2 card's column: behind the row-1 character it belongs to (entry.attachedId), or
+-- else the next column nothing in row 2 uses yet. Entries are placed in order, so earlier ones (loyal
+-- companions) claim their slot first. Returns the placements and the number of columns needed.
+function planRowTwoColumns(entries, columnOf, rowOneCount)
     local placements, used, loose = {}, {}, {}
-    local talIds = {}
-    for talId, _ in pairs(talismanIdsEquipped or {}) do table.insert(talIds, talId) end
-    table.sort(talIds)
-
-    for _, talId in ipairs(talIds) do
-        local attachment = talismanIdsEquipped[talId] or ""
-        local attachedId = attachment:match("Attached to:%s*(.-)%s*$")
-        local column = attachedId and columnOf[attachedId]
+    for _, entry in ipairs(entries) do
+        local column = entry.attachedId and columnOf[entry.attachedId]
         if column and not used[column] then
             used[column] = true
-            table.insert(placements, { id = talId, column = column })
+            table.insert(placements, { id = entry.id, column = column, isTalisman = entry.isTalisman })
         else
-            table.insert(loose, talId)
+            table.insert(loose, entry)
         end
     end
 
     local columnCount = math.max(rowOneCount, 1)
     local nextColumn = 1
-    for _, talId in ipairs(loose) do
+    for _, entry in ipairs(loose) do
         while used[nextColumn] do nextColumn = nextColumn + 1 end
         used[nextColumn] = true
-        table.insert(placements, { id = talId, column = nextColumn })
+        table.insert(placements, { id = entry.id, column = nextColumn, isTalisman = entry.isTalisman })
         columnCount = math.max(columnCount, nextColumn)
     end
     return placements, columnCount
