@@ -67,10 +67,11 @@ MODEL_SPACING       = 1.8   -- Distance between copies of one model; they spread
 MODEL_SPREAD_MAX    = 2.4   -- Copies never spread further than this, so they stay on the card
 
 -- A familiar taken more than once gets a card per copy, each with one model, numbered I, II, III on
--- both so a card can track its own model. The card's numeral plate floats just past one end of it.
+-- both so a card can track its own model. The card's numeral plate lies on the card near its bottom
+-- edge, where row 2 (talismans) can't cover it; the card text under it is only readable on hover anyway.
 ROMAN_NUMERALS        = { "I", "II", "III" }
-CARD_NUMERAL_SIDE     = 1         -- Which end of the card the plate sits past: 1 or -1 (flip it if the plate lands at the player's end)
-CARD_NUMERAL_GAP      = 10        -- Gap between the card's edge and the plate, in UI units (100 per unit of card length)
+CARD_NUMERAL_SIDE     = 1         -- Which end of the card the plate sits at: 1 is the bottom, the player's end (seen in TTS, 2026-10-21)
+CARD_NUMERAL_GAP      = 12        -- Gap between the card's bottom edge and the plate, in UI units (100 per unit of card length)
 CARD_NUMERAL_LIFT     = 10        -- Height of the plate above the card's face, in the same units
 CARD_NUMERAL_ROTATION = "0 0 180" -- Flat on the card, as the health tracker lies on a tile; try "0 0 0" if the numeral reads upside down
 CARD_NUMERAL_WIDTH    = 110       -- Same size as the numeral plate above each model's health tracker
@@ -932,11 +933,11 @@ function copyObject(obj, position, rotation, edit)
     return spawnObjectData({ data = data, position = position, rotation = rotation })
 end
 
--- The XML for a card's numeral plate, floating just past one end of the card. The card's length comes
--- from its bounds, so the plate clears the edge whatever the deck's card size.
+-- The XML for a card's numeral plate, lying on the card near its bottom edge. The card's length comes
+-- from its bounds, so the plate stays on the card whatever the deck's card size.
 function cardNumeralXml(card, numeral)
     local length = card.getBoundsNormalized().size.z / card.getScale().z -- in the card's own units
-    local offset = math.floor(CARD_NUMERAL_SIDE * (length * 50 + CARD_NUMERAL_HEIGHT / 2 + CARD_NUMERAL_GAP) + 0.5)
+    local offset = math.floor(CARD_NUMERAL_SIDE * (length * 50 - CARD_NUMERAL_HEIGHT / 2 - CARD_NUMERAL_GAP) + 0.5)
     return string.format([[
 <Panel width="%d" height="%d" position="0 %d -%d" rotation="%s" color="#111c24e6" outline="#2c3e50" outlineSize="2">
     <Text fontStyle="Bold" fontSize="40" color="#e4a557" alignment="MiddleCenter">%s</Text>

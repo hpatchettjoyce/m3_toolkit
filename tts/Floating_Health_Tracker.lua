@@ -14,7 +14,8 @@
 
      COPY NUMERALS: when a cast takes more than one copy of a familiar, the TTS Loader spawns each
      copy with a Roman numeral (I, II, III) in its saved state, matching the numeral on its card.
-     The numeral shows on a plate centred above the health panel. Single copies have none.
+     The numeral shows on an upright plate on the standee itself, separate from the health panel
+     (one plate on each face, so both players can read it). Single copies have none.
 --]]
 
 -- ============================================================================
@@ -65,11 +66,19 @@ STANDEE_CONFIG = {
     height       = "100"            -- Resolution height
 }
 
--- 3. COPY NUMERAL PLATE (centred above the health panel; only shown when the model has a numeral)
-NUMERAL_PLATE_WIDTH  = 110
-NUMERAL_PLATE_HEIGHT = 64
-NUMERAL_PLATE_GAP    = 8      -- Space between the plate and the top of the health panel
+-- 3. COPY NUMERAL PLATE (only shown when the model has a numeral)
+-- On a standee: two upright plates, one just in front of each face, low on the figure. On a tile: one
+-- plate lying flat on its face, hidden with the health panel when the tile is flipped.
+-- UI units are 1/100 of a world unit, and -Z is up, as for the health panel.
+NUMERAL_PLATE_WIDTH  = 70
+NUMERAL_PLATE_HEIGHT = 46
+NUMERAL_FONT_SIZE    = 30
 NUMERAL_COLOUR       = "#e4a557" -- GOLD STONE from the brand palette
+STANDEE_NUMERAL_HEIGHT  = 60     -- Height of the plate's centre above the standee's base
+STANDEE_NUMERAL_OFFSET  = 12     -- Distance in front of each face; raise it if the plate clips into the figure
+STANDEE_NUMERAL_FRONT   = "-90 0 0"  -- Upright, facing one side of the standee...
+STANDEE_NUMERAL_BACK    = "90 180 0" -- ...and the other. Swap these two if the numerals read mirrored.
+TILE_NUMERAL_LIFT       = 5      -- Height of the flat plate above a tile's face
 
 -- 4. NOTIFICATION PREFERENCES
 ENABLE_CHAT_NOTIFICATIONS = true    -- Set to true to broadcast health changes in the global game chat
@@ -210,19 +219,6 @@ function setupXmlUi()
         <!-- Plus Button -->
         <Button class="health-btn" onClick="incrementHealth" fontSize="36" color="#27ae60" width="60" height="60">+</Button>
     </HorizontalLayout>
-
-    <!-- Copy numeral plate, centred above the panel (the panel's padding is added back so it clears the edge) -->
-    <Panel id="copyNumeralPlate"
-           width="%d"
-           height="%d"
-           rectAlignment="UpperCenter"
-           offsetXY="0 %d"
-           color="#111c24e6"
-           outline="#2c3e50"
-           outlineSize="2"
-           active="%s">
-        <Text id="copyNumeralText" class="health-val" fontSize="40" color="%s">%s</Text>
-    </Panel>
 </Panel>
 ]], 
     config.width, 
@@ -231,17 +227,28 @@ function setupXmlUi()
     config.rotation, 
     config.scale,
     initialActiveState,
-    currentHealth,
-    NUMERAL_PLATE_WIDTH,
-    NUMERAL_PLATE_HEIGHT,
-    NUMERAL_PLATE_HEIGHT + NUMERAL_PLATE_GAP + 10,
-    (copyNumeral ~= "") and "true" or "false",
-    NUMERAL_COLOUR,
-    copyNumeral
-    )
+    currentHealth
+    ) .. numeralPlatesXml(initialActiveState)
 
     -- Inject XML into the object's UI component
     self.UI.setXml(xml)
+end
+
+-- The copy numeral plates, separate from the health panel; empty for a model that isn't a numbered copy
+function numeralPlatesXml(tileActiveState)
+    if copyNumeral == "" then return "" end
+    local function plate(id, position, rotation, active)
+        return string.format([[
+<Panel id="%s" width="%d" height="%d" position="%s" rotation="%s" active="%s" color="#111c24e6" outline="#2c3e50" outlineSize="2">
+    <Text fontStyle="Bold" fontSize="%d" color="%s" alignment="MiddleCenter">%s</Text>
+</Panel>
+]], id, NUMERAL_PLATE_WIDTH, NUMERAL_PLATE_HEIGHT, position, rotation, active, NUMERAL_FONT_SIZE, NUMERAL_COLOUR, copyNumeral)
+    end
+    if isTileObject then
+        return plate("copyNumeralPlate", "0 0 -" .. TILE_NUMERAL_LIFT, "0 0 180", tileActiveState)
+    end
+    return plate("copyNumeralFront", string.format("0 -%d -%d", STANDEE_NUMERAL_OFFSET, STANDEE_NUMERAL_HEIGHT), STANDEE_NUMERAL_FRONT, "true")
+        .. plate("copyNumeralBack", string.format("0 %d -%d", STANDEE_NUMERAL_OFFSET, STANDEE_NUMERAL_HEIGHT), STANDEE_NUMERAL_BACK, "true")
 end
 
 -- Click handler to increment health
@@ -288,6 +295,7 @@ function updateUIVisibility()
             isUIVisible = shouldShow
             local activeState = shouldShow and "true" or "false"
             self.UI.setAttribute("healthTrackerPanel", "active", activeState)
+            if copyNumeral ~= "" then self.UI.setAttribute("copyNumeralPlate", "active", activeState) end
             
             -- Debug log output to help design/verify
             if not shouldShow then
