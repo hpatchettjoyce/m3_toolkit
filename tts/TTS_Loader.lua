@@ -49,7 +49,7 @@ PLAYER_CONFIG = {
 }
 
 -- Temp spawning height offset to prevent collisions
-SPAWN_HEIGHT_OFFSET = 3.0
+SPAWN_HEIGHT_OFFSET = 3.0  -- Originals are lifted this far above their deck or bag while they are cloned
 
 -- Time (in seconds) to wait between card spawns inside active layout zones
 ZONE_LAYOUT_DELAY = 0.3
@@ -60,7 +60,8 @@ ZONE_LAYOUT_DELAY = 0.3
 BOARD_CENTRE        = { x = 0, z = 0 } -- The map is centred on the table origin (see MAP_START_POS)
 CARD_COLUMN_SPACING = 2.6   -- Distance between card centres along a row
 CARD_ROW_SPACING    = 3.6   -- Distance between row centres
-CARD_DROP_HEIGHT    = 2.0   -- Minimum spawn height; cards drop onto the table from here
+CARD_LIFT           = 0.2   -- Cards spawn this far above the surface under their slot
+MODEL_LIFT          = 0.4   -- Models spawn this far above their card
 CARD_YAW_OFFSET     = 0     -- Set to 180 if the cards come out upside down for the player
 MODEL_SPACING       = 1.8   -- Distance between copies of one model; they spread along their card
 MODEL_SPREAD_MAX    = 2.4   -- Copies never spread further than this, so they stay on the card
@@ -465,10 +466,10 @@ function loadCastCoroutine()
         isCloning = true
         local success = cloneCardFromDeck(castDeck, cardName or "", cardId, target, rotation, config.color, toHand)
         if success then
+            -- Wait only until the original is back in the deck; no fixed pause, so cards come down in one quick pass
             while isCloning do
                 coroutine.yield(0)
             end
-            yieldSeconds(0.2)
         else
             isCloning = false
             print("Warning: card not found: " .. tostring(cardName or "") .. " (" .. tostring(cardId) .. ")")
@@ -485,7 +486,7 @@ function loadCastCoroutine()
             local back = spacing * (qty - 1) / 2
             return {
                 x = centre.x - grid.depth.x * back,
-                y = centre.y,
+                y = surfaceHeightAt(centre.x, centre.z, centre.y) + MODEL_LIFT, -- the card's top, once it has landed
                 z = centre.z - grid.depth.z * back
             }, { x = grid.depth.x * spacing, z = grid.depth.z * spacing }
         end
@@ -499,107 +500,63 @@ function loadCastCoroutine()
         }, { x = 1.8 * xDirection, z = 0 }
     end
 
-    -- 2. Place the Champion card
-    local champName = castData.champion
-    local champId = castData.championId
-    if (champName or champId) and not isReducedScenario then
-        placeCard(champName, champId, 1, columnOf[champId] or 1)
+    -- 2. Place every card first, in one pass: row 1 left to right, then row 2. The models follow once
+    -- the cards have landed, so each model lands on its card and no character arrives ahead of the rest.
+    local minionId = (castData.dominion == "Iro-Si-Khar") and "02IRO-04MIN-0048" or "05AHE-04MIN-0148"
+    local cardNames = {}
+    if castData.championId then cardNames[castData.championId] = castData.champion end
+    if hasAutoMinion then cardNames[minionId] = (castData.dominion == "Iro-Si-Khar") and "Driplet" or "Huskling" end
+
+    for column, id in ipairs(rowOneIds) do
+        placeCard(cardNames[id] or "", id, 1, column)
     end
-    
-    -- 3. Extract Units, deal 1 Card to Hand, and spawn recruited Models
+    table.sort(rowTwoPlacements, function(a, b) return a.column < b.column end)
+    for _, entry in ipairs(rowTwoPlacements) do
+        placeCard("", entry.id, 2, entry.column) -- loyal companions and talismans
+    end
+    yieldSeconds(0.4) -- let the cards land before the models drop onto them
+
+    -- 3. Spawn each character's models onto its card
     local modelsBag = getBagFromZone(MODELS_ZONE_GUID)
     if not modelsBag then
         print("Warning: Models Bag not found in trigger zone " .. MODELS_ZONE_GUID .. ". Models will not be spawned.")
     end
 
-    local unitIndex = 0
-
-    -- 3a. Spawn Champion Standee (Task 3 Improvement - Champion as Character 1)
-    local champId = castData.championId
-    if champId and champId ~= "" and not isReducedScenario and modelsBag then
+    local unitIndex = 0 -- row in the side-of-table fallback layout
+    local function spawnModels(id, qty, isStacked, label)
         unitIndex = unitIndex + 1
-        local unitSpawnPos, step = modelPlacement(slotOf[champId] or { row = 1, column = 1 }, 1, unitIndex)
-
+        local position, step = modelPlacement(slotOf[id], qty, unitIndex)
         isCloning = true
-        -- Spawn exactly 1 copy of the Champion standee, on the Champion card
-        local modelSuccess = cloneModelFromBag(modelsBag, champId, 1, unitSpawnPos, targetModelRot, step, false, config.color)
+        -- Rotate standees around Y so they face the players directly
+        local modelSuccess = cloneModelFromBag(modelsBag, id, qty, position, targetModelRot, step, isStacked, config.color)
         if modelSuccess then
             while isCloning do
                 coroutine.yield(0)
             end
-            yieldSeconds(0.2)
         else
             isCloning = false
-            print("Warning: Champion model not found in bag for ID: " .. champId .. " (has the bag been re-run through Model_ID_Injector since the ID format changed?)")
+            print("Warning: " .. label .. " model not found in bag for ID: " .. id .. " (has the bag been re-run through Model_ID_Injector since the ID format changed?)")
         end
     end
 
-    -- 3b. Loop and spawn recruited Unit Standees
-    if #unitIds > 0 then
+    if modelsBag then
+        -- 3a. Champion standee (Task 3 Improvement - Champion as Character 1)
+        if champInRowOne then
+            spawnModels(castData.championId, 1, false, "Champion")
+        end
+        -- 3b. Recruited unit standees, loyal companions included
         for _, unitId in ipairs(unitIds) do
             local qty = castData.unitIdsRecruited[unitId]
-            unitIndex = unitIndex + 1
-
-            -- Place the unit's card in its slot (row 2 for a loyal companion)
-            local slot = slotOf[unitId]
-            placeCard("", unitId, slot.row, slot.column)
-
-            -- Clone the unit's models onto its card
-            if modelsBag and qty and qty > 0 then
-                local unitSpawnPos, step = modelPlacement(slotOf[unitId], qty, unitIndex)
-
-                isCloning = true
-                -- Rotate standees around Y so they face the players directly
-                local modelSuccess = cloneModelFromBag(modelsBag, unitId, qty, unitSpawnPos, targetModelRot, step, false, config.color)
-                if modelSuccess then
-                    while isCloning do
-                        coroutine.yield(0)
-                    end
-                    yieldSeconds(0.2)
-                else
-                    isCloning = false
-                    print("Warning: Unit model not found in bag for ID: " .. unitId .. " (has the bag been re-run through Model_ID_Injector since the ID format changed?)")
-                end
+            if qty and qty > 0 then
+                spawnModels(unitId, qty, false, "Unit")
             end
         end
-    end
-
-    -- 3c. Auto-Summon Minion card (Task 1), last column of row 1, then 12 stacked Minions on it
-    -- (Driplet / Huskling Lot for Iro-Si-Khar & Ahèserec) (Tweak 2). The card goes down first, as
-    -- every other card does, so the stack lands on top of it.
-    if hasAutoMinion then
-        local minionName = (castData.dominion == "Iro-Si-Khar") and "Driplet" or "Huskling"
-        local minionId = (castData.dominion == "Iro-Si-Khar") and "02IRO-04MIN-0048" or "05AHE-04MIN-0148"
-        placeCard(minionName, minionId, 1, columnOf[minionId])
-        yieldSeconds(0.3) -- let the card settle: the bottom token spawns at the height the card drops from
-
-        if modelsBag then
-            unitIndex = unitIndex + 1
-            local minionSpawnPos, step = modelPlacement(slotOf[minionId], 1, unitIndex)
-
-            isCloning = true
-            -- Spawn exactly 12 copies stacked vertically on the minion card (isStacked = true)
-            local modelSuccess = cloneModelFromBag(modelsBag, minionId, 12, minionSpawnPos, targetModelRot, step, true, config.color)
-            if modelSuccess then
-                while isCloning do
-                    coroutine.yield(0)
-                end
-                yieldSeconds(0.2)
-            else
-                isCloning = false
-                print("Warning: Minion model not found in bag for ID: " .. minionId .. " (has the bag been re-run through Model_ID_Injector since the ID format changed?)")
-            end
+        -- 3c. 12 stacked minions on the minion card (Driplet / Huskling Lot for Iro-Si-Khar & Ahèserec) (Tweak 2)
+        if hasAutoMinion then
+            spawnModels(minionId, 12, true, "Minion")
         end
     end
-    
-    -- 4. Place each Talisman in row 2, behind the character it is attached to
-    for _, entry in ipairs(rowTwoPlacements) do
-        if entry.isTalisman then
-            placeCard("", entry.id, 2, entry.column)
-        end
-    end
-    
-    
+
     -- 5. Extract and deal Special Action cards to player's Hand (Task 4)
     if castData.specialIds and #castData.specialIds > 0 then
         for i, specId in ipairs(castData.specialIds) do
@@ -710,7 +667,8 @@ function cloneCardFromDeck(deck, cardName, cardId, targetPos, targetRot, playerC
             -- Take original card out briefly
             local spawnedCard = deck.takeObject({
                 index = objInfo.index,
-                position = {x = targetPos.x, y = targetPos.y + SPAWN_HEIGHT_OFFSET, z = targetPos.z},
+                -- Lift the original above its own deck, not over the slot, while it is cloned
+                position = {x = deck.getPosition().x, y = deck.getPosition().y + SPAWN_HEIGHT_OFFSET, z = deck.getPosition().z},
                 rotation = targetRot,
                 smooth = false,
                 callback_function = function(cardObj)
@@ -873,6 +831,24 @@ function planRowTwoColumns(entries, columnOf, rowOneCount)
     return placements, columnCount
 end
 
+-- Zones are invisible, so a downward ray must look straight through them
+NON_SURFACE_TAGS = { ScriptingTrigger = true, HandTrigger = true, FogOfWarTrigger = true, LayoutZone = true, RandomizeTrigger = true }
+NON_SURFACE_TYPES = { Scripting = true, Hand = true, Fog = true, Layout = true, Randomize = true }
+
+-- Height of the highest solid thing at (x, z): the table, or a card already lying there.
+-- Falls back to fallbackY if the ray hits nothing.
+function surfaceHeightAt(x, z, fallbackY)
+    local hits = Physics.cast({ origin = { x, 40, z }, direction = { 0, -1, 0 }, type = 1, max_distance = 80 })
+    local best = nil
+    for _, hit in ipairs(hits or {}) do
+        local obj = hit.hit_object
+        if obj and obj ~= self and not NON_SURFACE_TAGS[obj.tag] and not NON_SURFACE_TYPES[obj.type] then
+            if best == nil or hit.point.y > best then best = hit.point.y end
+        end
+    end
+    return best or fallbackY
+end
+
 -- Lays a grid of card slots over a cast zone. "Depth" runs from the back of the zone towards the
 -- board (BOARD_CENTRE), so row 1 is the row nearest the board whichever way the zone faces, and
 -- column 1 is on the player's left as they face the board.
@@ -900,7 +876,6 @@ function getCastZoneGrid(zone, columnCount)
 
     local columnSpacing = math.min(CARD_COLUMN_SPACING, widthLength / math.max(columnCount, 1))
     local rowSpacing = math.min(CARD_ROW_SPACING, depthLength / 2)
-    local spawnY = math.max(centre.y, CARD_DROP_HEIGHT)
 
     -- Card tops point at the board: a card at yaw 180 reads upright with its top towards +z
     local yaw = math.deg(math.atan2(-depth.x, -depth.z)) + CARD_YAW_OFFSET
@@ -911,11 +886,9 @@ function getCastZoneGrid(zone, columnCount)
         slot = function(row, column)
             local acrossOffset = (column - (columnCount + 1) / 2) * columnSpacing
             local depthOffset = depthLength / 2 - rowSpacing * (row - 0.5)
-            return {
-                x = centre.x + across.x * acrossOffset + depth.x * depthOffset,
-                y = spawnY,
-                z = centre.z + across.z * acrossOffset + depth.z * depthOffset
-            }
+            local x = centre.x + across.x * acrossOffset + depth.x * depthOffset
+            local z = centre.z + across.z * acrossOffset + depth.z * depthOffset
+            return { x = x, y = surfaceHeightAt(x, z, centre.y) + CARD_LIFT, z = z }
         end
     }
 end
@@ -941,7 +914,8 @@ function cloneModelFromBag(bag, modelId, qty, targetPos, targetRot, step, isStac
             -- Take original model out briefly
             local spawnedModel = bag.takeObject({
                 guid = objInfo.guid,
-                position = {x = targetPos.x, y = targetPos.y + SPAWN_HEIGHT_OFFSET, z = targetPos.z},
+                -- Lift the original above its own bag, not over the card, while it is cloned
+                position = {x = bag.getPosition().x, y = bag.getPosition().y + SPAWN_HEIGHT_OFFSET, z = bag.getPosition().z},
                 rotation = targetRot,
                 smooth = false,
                 callback_function = function(modelObj)
