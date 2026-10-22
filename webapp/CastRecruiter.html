@@ -71,6 +71,10 @@
                prints Display P3 values (#E4A557 etc.), which CSS would misread. Same value as
                --accent-colour; a literal so 06_check_theme_contrast.py can read it. */
             --logo-colour: #EEA145;
+
+            /* The Prowess and Fortitude icons in rules text are SANDSTONE, as on the printed
+               card face. sRGB value (the guide's slide prints the P3 one, #DEBA87). */
+            --stat-icon-colour: #E4B77F;
         }
 
         body {
@@ -270,6 +274,11 @@
 
         /* The stat and ether icons carry a number inside the shape, so they are drawn larger
            than the dice. --stat-icon-size is their knob; same centring offset as the dice. */
+        .rules-icon--prowess,
+        .rules-icon--fortitude {
+            color: var(--stat-icon-colour);
+        }
+
         .rules-icon--prowess,
         .rules-icon--fortitude,
         .rules-icon--ether {
