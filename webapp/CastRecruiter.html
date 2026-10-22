@@ -67,9 +67,8 @@
             --font-display: 'Cinzel', 'Trajan Pro', Georgia, 'Times New Roman', serif;
             --font-body: 'Montserrat', 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
 
-            /* The logo's gold is GOLD STONE. The guide's swatches and every supplied
-               file draw #EEA145; only the hex labels on its palette page (#E4A557 etc.)
-               are off, so the files win (Harvey, 2026-10-22). Same value as
+            /* The logo's gold is GOLD STONE in sRGB, #EEA145. The guide's palette page
+               prints Display P3 values (#E4A557 etc.), which CSS would misread. Same value as
                --accent-colour; a literal so 06_check_theme_contrast.py can read it. */
             --logo-colour: #EEA145;
         }
