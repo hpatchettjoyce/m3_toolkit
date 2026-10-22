@@ -1,6 +1,9 @@
-Rhavlika    #DD2335
-Iro-Si-Khar #28A9D9
-Voisira     #F7B828
-Xalakith    #EDE9DC
-Ahèserec    #29A049
-Veritian    #464C68
+Rhavlika      #DD1E34
+Iro-Si-Khar   #24A9DB
+Voisira       #FBB92C
+Xalakith      #EDEADD
+Ahèserec      #269F45
+Veritian      #444C69
+The Masque    #6A3AAB
+The Incarnate #ED492F
+The Argentum  #262628

@@ -11,6 +11,8 @@ The canonical palette (sRGB, P3 and CMYK columns, pairings, CSS tokens) is `Monu
 
 ## Dominion colours — ANSWERED 2026-09-15
 
+**Updated 2026-10-22:** Harvey's `Dominion Colours.svg` export is the source; the values below are the older September set, which differed by 1–5 points per channel. Current values (all nine dominions) are in `Dominion Colours.txt` and `Brand_Style.md`.
+
 The guide gives four chromatic hues but the game has six dominions, so the mapping was never
 derivable from it. Harvey supplied all six directly, in `Dominion Colours.txt`:
 
