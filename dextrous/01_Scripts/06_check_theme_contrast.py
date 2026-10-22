@@ -47,7 +47,7 @@ PAIRS = [
     ("--primary-colour",      "--panel-bg",       TEXT, "h1, h2, #ether-tracker"),
     ("--primary-colour",      "--bg-colour",      TEXT, ".site-footer-legal a (contact link)"),
     ("--accent-colour",       "--surface-bg",     TEXT, ".card-effect-name"),
-    ("--stat-icon-colour",    "--surface-bg",     UI,   ".rules-icon--prowess / --fortitude"),
+    ("--stat-icon-colour",    "--surface-bg",     UI,   ".rules-icon--prowess / --fortitude / --ether"),
     ("--muted-text-colour",   "--surface-bg",     TEXT, ".card-effect-type"),
     ("--primary-colour",      "--surface-bg",     TEXT, ".card-caption-text strong (keywords)"),
     ("--accent-colour",       "--surface-bg",     TEXT, ".dominion-rules h2 (box title)"),
