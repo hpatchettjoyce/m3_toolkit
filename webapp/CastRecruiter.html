@@ -4,8 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Monumentum Cast Recruiter</title>
-    <!-- Cinzel is the brand guide's one specified face ("LOGO TYPEFACE", PG.07). Montserrat,
-         the body face, is Harvey's choice - the guide specifies none. Both are OFL Google
+    <!-- Brand fonts (Monumentum/05_AI Agent Support/01_Context/Brand_Style.md): Cinzel for
+         display, Montserrat for web body text. Both are OFL Google
          Fonts, so they can be linked rather than licensed, and share one request. Everything
          below falls back to a real stack if the request fails -- see --font-display/-body. -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -17,46 +17,47 @@
 
             /* Screen chrome. Branding pass 1 step 2 re-defines these tokens for
                the off-black ground; nothing below this group is paper-facing. */
-            --primary-colour: #5CA7A8;
-            --primary-strong-colour: #B1C7C8;
-            --accent-colour: #E4A557;
-            --accent-hover-colour: #F1E3CE;
-            --bg-colour: #041212;
-            --panel-bg: #102A2A;
-            --surface-bg: #041212;
-            --overlay-bg: #041212;
-            --field-bg: #041212;
-            --text-colour: #F8F3E6;
-            --heading-text-colour: #B1C7C8;
-            --subtle-text-colour: #999F9F;
-            --muted-text-colour: #999F9F;
-            --on-fill-colour: #041212;
-            --border-colour: #374141;
-            --field-border-colour: #999F9F;
-            --card-back-colour: #041212;
-            --card-back-empty-colour: #374141;
-            --warning-colour: #C89583;
-            --warning-bg: #34050D;
-            --warning-border: #C89583;
-            --success-colour: #B7BA9F;
-            --success-hover-colour: #FBF8F0;
-            --neutral-colour: #999F9F;
-            --neutral-hover-colour: #FBF8F0;
-            --scrim-colour: rgba(4, 18, 18, 0.7);
+            --primary-colour: #3BA9A9;
+            --primary-strong-colour: #ABC7C7;
+            --accent-colour: #EEA145;
+            --accent-hover-colour: #F3E1CA;
+            --bg-colour: #001212;
+            --panel-bg: #042B2A;
+            --surface-bg: #001212;
+            --overlay-bg: #001212;
+            --field-bg: #001212;
+            --text-colour: #F8F2E4;
+            --heading-text-colour: #ABC7C7;
+            --subtle-text-colour: #989F9F;
+            --muted-text-colour: #989F9F;
+            --on-fill-colour: #001212;
+            --border-colour: #354141;
+            --field-border-colour: #989F9F;
+            --card-back-colour: #001212;
+            --card-back-empty-colour: #354141;
+            --warning-colour: #D09180;
+            --warning-bg: #3A000C;
+            --warning-border: #D09180;
+            --success-colour: #B5B99B;
+            --success-hover-colour: #FCF8EF;
+            --neutral-colour: #989F9F;
+            --neutral-hover-colour: #FCF8EF;
+            --scrim-colour: rgba(0, 18, 18, 0.7);
             --shadow-rgb: 0, 0, 0;
 
             /* Ink. The printed sheet and its on-screen preview. These stay
                light-on-white when the chrome above goes dark - the print styles
-               exist to save ink on home printers. Do not re-theme them. */
-            --ink-paper: #ffffff;
-            --ink-title-colour: #000000;
-            --ink-text-colour: #111111;
-            --ink-subtle-colour: #555555;
-            --ink-rule-colour: #111111;
-            --ink-stat-bg: #f2f4f4;
-            --ink-stat-border: #bdc3c7;
-            --ink-stat-text: #222222;
-            --ink-faction-fallback: #333333;
+               exist to save ink on home printers. Do not re-theme them; the inks
+               are brand neutrals, the paper stays white. */
+            --ink-paper: #ffffff;           /* white stock: the guide's pure-white exception */
+            --ink-title-colour: #001212;    /* OFF-BLACK */
+            --ink-text-colour: #001212;
+            --ink-subtle-colour: #354141;   /* CHARCOAL */
+            --ink-rule-colour: #001212;
+            --ink-stat-bg: #FCF8EF;         /* PARCHMENT */
+            --ink-stat-border: #989F9F;     /* GREY */
+            --ink-stat-text: #001212;
+            --ink-faction-fallback: #354141;
 
             --radius: 12px;
 
@@ -66,11 +67,11 @@
             --font-display: 'Cinzel', 'Trajan Pro', Georgia, 'Times New Roman', serif;
             --font-body: 'Montserrat', 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
 
-            /* The logo's own gold, from the supplied SVG. Deliberately NOT
-               --accent-colour: the guide's asset is #eea145 and the palette page's
-               GOLD STONE is #E4A557. The asset is what was supplied, so it wins here,
-               and the two are not reconciled without Harvey's say-so. */
-            --logo-colour: #eea145;
+            /* The logo's gold is GOLD STONE. The guide's swatches and every supplied
+               file draw #EEA145; only the hex labels on its palette page (#E4A557 etc.)
+               are off, so the files win (Harvey, 2026-10-22). Same value as
+               --accent-colour; a literal so 06_check_theme_contrast.py can read it. */
+            --logo-colour: #EEA145;
         }
 
         body {

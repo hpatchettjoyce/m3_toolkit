@@ -74,9 +74,9 @@ ROMAN_NUMERALS        = { "I", "II", "III" }
 CARD_NUMERAL_SIDE     = 1         -- Which end of the card the plate sits past: 1 is the bottom, the player's end (seen in TTS, 2026-10-21)
 CARD_NUMERAL_GAP      = 10        -- Gap between the card's bottom edge and the plate, in UI units (100 per unit of card length)
 CARD_NUMERAL_LIFT     = 10        -- Height of the plate above the card's centre, in the same units
-CARD_NUMERAL_FILL     = "#041212" -- OFF-BLACK, from the M3 Branding Guide
-CARD_NUMERAL_OUTLINE  = "#374141" -- The guide's grey accent
-CARD_NUMERAL_COLOUR   = "#e4a557" -- GOLD STONE
+CARD_NUMERAL_FILL     = "#001212" -- OFF-BLACK, from the M3 Branding Guide
+CARD_NUMERAL_OUTLINE  = "#354141" -- The guide's grey accent
+CARD_NUMERAL_COLOUR   = "#EEA145" -- GOLD STONE
 CARD_NUMERAL_WIDTH    = 110       -- Same size as the numeral plate above each model's health tracker
 CARD_NUMERAL_HEIGHT   = 64
 
