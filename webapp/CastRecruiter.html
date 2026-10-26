@@ -72,7 +72,7 @@
                --accent-colour; a literal so 06_check_theme_contrast.py can read it. */
             --logo-colour: #EEA145;
 
-            /* The Prowess, Fortitude and Ether icons in rules text are SANDSTONE, as on the
+            /* The Prowess, Fortitude, Ether and Rank Check icons in rules text are SANDSTONE, as on the
                printed card face. sRGB value (the guide's slide prints the P3 one, #DEBA87). */
             --stat-icon-colour: #E4B77F;
         }
@@ -273,16 +273,18 @@
         }
 
         /* The stat and ether icons carry a number inside the shape, so they are drawn larger
-           than the dice. --stat-icon-size is their knob; same centring offset as the dice. */
+           than the dice. The rank check dice share their styling for now. --stat-icon-size is their knob; same centring offset as the dice. */
         .rules-icon--prowess,
         .rules-icon--fortitude,
-        .rules-icon--ether {
+        .rules-icon--ether,
+        .rules-icon--rank-check {
             color: var(--stat-icon-colour);
         }
 
         .rules-icon--prowess,
         .rules-icon--fortitude,
-        .rules-icon--ether {
+        .rules-icon--ether,
+        .rules-icon--rank-check {
             --stat-icon-size: 2.3em;
             height: var(--stat-icon-size);
             vertical-align: calc((var(--stat-icon-size) - 0.7em) / -2);

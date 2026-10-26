@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
+<svg width="100%" height="100%" viewBox="0 0 3000 3000" version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" xml:space="preserve" xmlns:affinity="https://www.affinity.studio/" style="fill-rule:evenodd;clip-rule:evenodd;stroke-linecap:round;stroke-linejoin:round;stroke-miterlimit:1.5;">
+    <g id="Rank-1" transform="matrix(2.663565,0,0,3.194742,0,0)">
+        <rect x="0" y="0" width="1126.31" height="939.043" style="fill:none;"/>
+        <g id="Rank-11" affinity:id="Rank-1" transform="matrix(1.564319,0,0,1.304226,-513.484963,-42.676203)">
+            <g transform="matrix(0.279614,0,0,0.11784,434.359016,125.429047)">
+                <path d="M908,920L1354,1531L908,2142L462,1531L908,920Z" style="fill:rgb(228,183,127);"/>
+            </g>
+            <g transform="matrix(0.24,0,0,0.24,191.20815,133.521486)">
+                <path d="M2071,356L1443.998,718L1443.998,1442L2071,1804L2698.002,1442L2698.002,718L2071,356ZM2698.002,718L2071,1080L1443.998,718L2071,1080L2071,1804" style="fill:none;stroke:rgb(228,183,127);stroke-width:40px;"/>
+            </g>
+        </g>
+    </g>
+</svg>
