@@ -1,6 +1,9 @@
 """Report the colour profile and the colours inside PNG, SVG, PDF and AI files.
 
-Usage: python3 colour_check.py FILE [FILE ...]
+Usage: python3 colour_check.py [--rows N] FILE [FILE ...]
+
+--rows N reads only the top N rows of each PNG: enough for a repeating
+pattern, and seconds instead of minutes for a 14k-pixel-square file.
 
 Each colour is named against the brand palette (Brand_Style.md): "Bright" is the
 artwork's value, "Dull" is the guide's printed hex label. No third-party
@@ -77,9 +80,18 @@ def icc_desc(profile):
     return "unnamed profile"
 
 
+def inflate_pieces(chunks):
+    """Yield the decompressed image data at most 1 MB at a time."""
+    inflate = zlib.decompressobj()
+    for chunk in chunks:
+        while chunk:
+            yield inflate.decompress(chunk, 1 << 20)
+            chunk = inflate.unconsumed_tail
+
+
 def check_png(path):
     data = path.read_bytes()
-    pos, idat, profile = 8, b"", "none (viewers read it as sRGB)"
+    pos, idat, profile = 8, [], "none (viewers read it as sRGB)"
     while pos < len(data):
         n, = struct.unpack(">I", data[pos:pos + 4])
         kind, body = data[pos + 4:pos + 8], data[pos + 8:pos + 8 + n]
@@ -87,7 +99,7 @@ def check_png(path):
         if kind == b"IHDR":
             w, h, depth, ctype = struct.unpack(">IIBB", body[:10])
         elif kind == b"IDAT":
-            idat += body
+            idat.append(body)
         elif kind == b"iCCP":
             name, rest = body.split(b"\0", 1)
             profile = icc_name(zlib.decompress(rest[1:]))
@@ -98,11 +110,17 @@ def check_png(path):
         print("  (only 8-bit RGB/RGBA PNGs are decoded)")
         return
     bpp = 4 if ctype == 6 else 3
-    raw, stride = zlib.decompress(idat), w * bpp
-    prev, counts, i = bytearray(stride), Counter(), 0
-    for _ in range(h):  # undo PNG row filters
-        f, line = raw[i], bytearray(raw[i + 1:i + 1 + stride])
-        i += 1 + stride
+    stride, rows = w * bpp, min(h, MAX_ROWS or h)
+    if rows < h:
+        print(f"  (top {rows:,} of {h:,} rows read)")
+    # inflate in bounded pieces: a whole 14k-pixel-square PNG is ~760 MB unpacked
+    pieces, pending = inflate_pieces(idat), bytearray()
+    prev, counts = bytearray(stride), Counter()
+    for _ in range(rows):  # undo PNG row filters
+        while len(pending) < 1 + stride:
+            pending += next(pieces)
+        f, line = pending[0], bytearray(pending[1:1 + stride])
+        del pending[:1 + stride]
         for x in range(stride):
             a = line[x - bpp] if x >= bpp else 0
             b, c = prev[x], (prev[x - bpp] if x >= bpp else 0)
@@ -175,7 +193,11 @@ def check_pdf(path):
         pass
 
 
-for arg in sys.argv[1:]:
+args = sys.argv[1:]
+MAX_ROWS = 0
+if args[:1] == ["--rows"]:
+    MAX_ROWS, args = int(args[1]), args[2:]
+for arg in args:
     p = Path(arg)
     print(p.name)
     {".png": check_png, ".svg": check_svg, ".pdf": check_pdf, ".ai": check_pdf}.get(p.suffix.lower(), lambda _: print("  unsupported type"))(p)
