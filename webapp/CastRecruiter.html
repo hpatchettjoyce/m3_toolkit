@@ -2186,6 +2186,8 @@
         html = html.replace(/\*(.*?)\*/g, '<em>$1</em>');
         html = html.replace(ICON_TOKEN, (token, wType, wStem, bType, bStem) =>
             renderIconToken(wType || bType, wStem || bStem, icons));
+        // Dextrous italic style: the card font needs a style, not *…*
+        html = html.replace(/\{Italic:([^{}]*)\}/g, '<em>$1</em>');
         // Any other Dextrous markup left over is dropped
         html = html.replace(/\{[^{}]*\}/g, '');
         return html;
