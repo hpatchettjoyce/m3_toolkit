@@ -303,6 +303,57 @@
             letter-spacing: 0.3px;
         }
 
+        /* A keyword with a definition (formatRulesText's `terms`): hover or tap shows the
+           #keyword-popover. A dotted underline in its own colour, so bold teal keywords and
+           plain ones both read as tappable. */
+        .keyword-term {
+            text-decoration: underline dotted;
+            text-underline-offset: 3px;
+            cursor: help;
+        }
+        .keyword-term:focus-visible {
+            outline: 2px solid var(--accent-colour);
+            outline-offset: 1px;
+            border-radius: 2px;
+        }
+
+        /* One shared definition box, placed beside the term by showKeyword() */
+        #keyword-popover {
+            position: fixed;
+            z-index: 1000;
+            max-width: min(340px, calc(100vw - 32px));
+            padding: 10px 12px;
+            background: var(--panel-bg);
+            border: 1px solid var(--border-colour);
+            border-radius: 8px;
+            box-shadow: 0 6px 20px rgba(var(--shadow-rgb), 0.5);
+            font-size: 0.85rem;
+            font-weight: 300;
+            line-height: 1.45;
+            letter-spacing: normal;
+            color: var(--text-colour);
+            text-align: left;
+        }
+        #keyword-popover[hidden] {
+            display: none;
+        }
+        .keyword-popover-term {
+            font-weight: 600;
+            color: var(--accent-colour);
+            letter-spacing: 0.3px;
+            margin-bottom: 4px;
+        }
+        .keyword-popover-source {
+            font-style: italic;
+            font-size: 0.8rem;
+            color: var(--muted-text-colour);
+            margin-top: 6px;
+        }
+        #keyword-popover strong {
+            font-weight: 600;
+            color: var(--primary-colour);
+        }
+
         .card-effect-name {
             font-weight: 400;
             color: var(--accent-colour);
@@ -2169,9 +2220,105 @@
             + `<use href="#${symbol.id}"/></svg>`;
     }
 
+    // --- Keyword definitions ------------------------------------------------------------
+    // A keyword's definition is its Player Handbook glossary entry (db.glossary, read live
+    // by main.gs getGlossary: { LETHAL: { term: "LETHAL(+X)", text } }). A dominion's own
+    // keyword (THICKETWAY, POOL, AURINEX) has no glossary entry, so it falls back to the
+    // dominion special rule that sets it in bold - the current dominion's first.
+    const dominionKeywordCache = {};
+    function keywordDefinition(word) {
+        const entry = (db.glossary || {})[word];
+        if (entry) return { term: entry.term, text: entry.text };
+        const cacheKey = state.dominion + '|' + word;
+        if (!(cacheKey in dominionKeywordCache)) {
+            const rules = db.dominionRules || {};
+            const order = [state.dominion].concat(Object.keys(rules).filter(d => d !== state.dominion));
+            let found = null;
+            order.some(dominion => {
+                const block = rules[dominion] && dominionRuleBlocks(rules[dominion].rules)
+                    .find(b => new RegExp('\\*\\*' + word + '\\b').test(b.body));
+                if (block) found = { term: word, text: block.body, source: `${dominion} rule: ${block.name}` };
+                return !!found;
+            });
+            dominionKeywordCache[cacheKey] = found;
+        }
+        return dominionKeywordCache[cacheKey];
+    }
+
+    // Hover shows a definition on a mouse; a tap (or Enter/Space) pins it until the next
+    // tap elsewhere, Escape or a scroll. The click is caught in the capture phase so a
+    // keyword inside a clickable card never selects the card as well.
+    const keywordPopover = document.createElement('div');
+    keywordPopover.id = 'keyword-popover';
+    keywordPopover.setAttribute('role', 'tooltip');
+    keywordPopover.hidden = true;
+    document.body.appendChild(keywordPopover);
+    let pinnedKeyword = null;
+
+    function showKeyword(termEl) {
+        const def = keywordDefinition(termEl.dataset.keyword);
+        if (!def) return;
+        keywordPopover.innerHTML = `<div class="keyword-popover-term">${escapeHtml(def.term)}</div>`
+            + formatRulesText(def.text, { icons: true, terms: false })
+            + (def.source ? `<div class="keyword-popover-source">${escapeHtml(def.source)}</div>` : '');
+        keywordPopover.hidden = false;
+        // Below the term, or above it when there is no room; kept 16px inside the viewport
+        const margin = 16;
+        const anchor = termEl.getBoundingClientRect();
+        const box = keywordPopover.getBoundingClientRect();
+        const left = Math.min(Math.max(margin, anchor.left), window.innerWidth - box.width - margin);
+        const below = anchor.bottom + 6;
+        const top = below + box.height > window.innerHeight - margin && anchor.top - box.height - 6 > margin
+            ? anchor.top - box.height - 6 : below;
+        keywordPopover.style.left = left + 'px';
+        keywordPopover.style.top = top + 'px';
+    }
+
+    function hideKeyword() {
+        keywordPopover.hidden = true;
+        pinnedKeyword = null;
+    }
+
+    function toggleKeyword(termEl) {
+        if (pinnedKeyword === termEl) { hideKeyword(); return; }
+        showKeyword(termEl);
+        pinnedKeyword = termEl;
+    }
+
+    document.addEventListener('click', e => {
+        const termEl = e.target.closest('.keyword-term');
+        if (termEl) {
+            e.stopPropagation();
+            e.preventDefault();
+            toggleKeyword(termEl);
+        } else if (!keywordPopover.contains(e.target)) {
+            hideKeyword();
+        }
+    }, true);
+    document.addEventListener('keydown', e => {
+        if (e.key === 'Escape') { hideKeyword(); return; }
+        const termEl = e.target.closest && e.target.closest('.keyword-term');
+        if (termEl && (e.key === 'Enter' || e.key === ' ')) {
+            e.preventDefault();
+            toggleKeyword(termEl);
+        }
+    });
+    if (window.matchMedia('(hover: hover)').matches) {
+        document.addEventListener('mouseover', e => {
+            const termEl = e.target.closest('.keyword-term');
+            if (termEl && !pinnedKeyword) showKeyword(termEl);
+        });
+        document.addEventListener('mouseout', e => {
+            if (e.target.closest('.keyword-term') && !pinnedKeyword) keywordPopover.hidden = true;
+        });
+    }
+    window.addEventListener('scroll', hideKeyword, true);
+    window.addEventListener('resize', hideKeyword);
+
     // `icons: true` draws icon tokens from the sprite (the on-screen caption). Without it
-    // they are `[LABEL]` text - the print card calls it that way.
-    function formatRulesText(text, { icons = false } = {}) {
+    // they are `[LABEL]` text - the print card calls it that way. `terms` (on whenever
+    // icons are) makes each defined keyword tappable; see keywordDefinition.
+    function formatRulesText(text, { icons = false, terms = icons } = {}) {
         if (!text) return "";
         // Escape first, so only the markup this function generates below is live HTML
         let html = escapeHtml(text);
@@ -2190,6 +2337,12 @@
         html = html.replace(/\{Italic:([^{}]*)\}/g, '<em>$1</em>');
         // Any other Dextrous markup left over is dropped
         html = html.replace(/\{[^{}]*\}/g, '');
+        // Keywords last, matching ALL-CAPS words in the text between tags only
+        if (terms) {
+            html = html.replace(/(<[^>]*>)|\b([A-Z][A-Z-]{2,})\b/g, (match, tag, word) =>
+                tag || !keywordDefinition(word) ? match
+                    : `<span class="keyword-term" role="button" tabindex="0" data-keyword="${word}">${word}</span>`);
+        }
         return html;
     }
 

@@ -30,6 +30,8 @@ There is also a `DEX Cast` tab in the spreadsheet. **Nothing in this repo reads 
 
 **Dominion rules come from a second spreadsheet.** `getDominionRules()` opens the master sheet ("02_Card and Dominion Effects") by `DOMINIONS_SPREADSHEET_ID` and reads its `Dominions` tab: row 1 dominion names, row 2 special rules (`Name | Type` blocks), then name/description row pairs in `DOMINION_ROW_KINDS` order (buff, buff, debuff, debuff, terrain, totem, minion, spawner; a `(terrain)`/`(totem)` tag in the name wins over position). It is served as `db.dominionRules[<Cast spelling of the dominion>]` and rendered by `renderDominionRules()`. A failure there sets `db.dominionRulesError` and the cards still load. `openById` works because the web app executes as its owner (`USER_DEPLOYING`).
 
+**Keyword definitions come from the Player Handbook Doc.** `getGlossary()` opens it by `HANDBOOK_DOC_ID` (`DocumentApp`, so the owner had to authorise the extra scope once by running `logGlossary` in the editor) and reads the paragraphs under the `Glossary of Terms` heading. Only ALL-CAPS terms are kept (LETHAL, AURA, STRIKE…), keyed by the bare word, and the first sentence of each entry (the flavour opener) is dropped. They are served as `db.glossary` (`{ LETHAL: { term: "LETHAL(+X)", text } }`), and a failure sets `db.glossaryError` and the cards still load. On screen, `formatRulesText`'s `terms` option (on whenever `icons` is, so never on print) wraps every ALL-CAPS word that `keywordDefinition()` can define in a `.keyword-term`, and hovering or tapping it opens `#keyword-popover`. A dominion's own keyword (THICKETWAY, POOL, AURINEX) has no glossary entry, so it falls back to the dominion special rule that sets it in bold. **The handbook's file name carries its version: if a new version is a new Doc, change `HANDBOOK_DOC_ID`** (the ID is in the Source Exporter's `02_Sources/_manifest.json`).
+
 **`M3_TTS_DB - Cast.csv` comes from `dextrous/01_Scripts/01_pull_cast.py`**, which copies the M3 Source Exporter's Drive export of the master sheet's `Cast` tab (same columns as `IN Cast`). No manual download.
 
 **`getActiveSpreadsheet()` resolves to the spreadsheet the script is BOUND to (M3_TTS_DB), which is not the card database.** Its `IN Cast` tab is a Google Sheets import of the master sheet's `Cast` tab (confirmed by Harvey, 2026-10-04), so card edits reach the web app live with no copy step. It has imported other tabs in the past, so a tab name that exists in the DB may not exist in the sheet the script actually sees — check the bound document before assuming the error is wrong.
@@ -42,7 +44,9 @@ Expected `getCardDatabase()` schema:
   "units": [{ "id": "01RHA-03FAM-0012", "name": "Caldrack", "class": "Familiar", "cost": 6, "isLoyal": true, "tiedChampionId": "01RHA-01CHP-0001" }],
   "specials": [{ "id": "01RHA-07SPA-0020", "name": "Thermal Venting", "cost": 0, "isSignature": false, "tiedChampionId": null }],
   "dominionRules": { "Iro-Si-Khar": { "rules": "Fluid Bodies | Ability\nAll allies have SLIGHT.", "entries": [{ "kind": "buff", "name": "Shell", "text": "..." }] } },
-  "dominionRulesError": ""
+  "dominionRulesError": "",
+  "glossary": { "LETHAL": { "term": "LETHAL(+X)", "text": "When this character's attack succeeds, add X to its bonus damage. ..." } },
+  "glossaryError": ""
 }
 ```
 

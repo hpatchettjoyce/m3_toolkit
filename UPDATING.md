@@ -9,6 +9,8 @@ From Windows the folder is `\\wsl.localhost\Ubuntu\home\harvey\projects\m3_toolk
 |---|---|---|
 | Card text or stats in the sheet | nothing — the web app reads the sheet live | nothing |
 | Dominion rules, statuses, terrain, totems (master sheet's `Dominions` tab) | nothing — the web app reads that tab live | nothing |
+| A keyword definition (Player Handbook's `Glossary of Terms`) | nothing — the web app reads the handbook Doc live | nothing |
+| A new handbook version saved as a new Doc | change `HANDBOOK_DOC_ID` in `webapp/main.gs` to the new Doc's ID | web app |
 | …and the text uses an icon not used before | 1, 2, 3, 2 | web app |
 | Card names, IDs, classes, or added / removed / reordered rows | 1, 2, 4, 5 | web app, TTS deck (+ models if IDs or classes changed) |
 | New card art (new Dextrous export) | 0, 2, 4, 5 (and 1 first if the sheet changed) | web app, TTS deck |
@@ -18,6 +20,7 @@ From Windows the folder is `\\wsl.localhost\Ubuntu\home\harvey\projects\m3_toolk
 
 Plain text edits need nothing because the web app pulls card text straight from the `IN Cast` tab.
 The Dominion Rules section reads the master sheet's `Dominions` tab by ID (`DOMINIONS_SPREADSHEET_ID` in `main.gs`).
+Keyword pop-ups (hover or tap a bold ALL-CAPS keyword) read the handbook's glossary by ID (`HANDBOOK_DOC_ID`); only ALL-CAPS terms are used, and each entry's first sentence (the flavour opener) is left out.
 Steps 1 and 2 are still a cheap check after any sheet edit.
 
 ## Steps

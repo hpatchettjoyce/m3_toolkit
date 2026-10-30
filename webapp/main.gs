@@ -23,6 +23,13 @@ var CAST_SHEET_NAME = "IN Cast";
 var DOMINIONS_SPREADSHEET_ID = "1Ygee2UCwKKsVmKysXC8IaIwvovRtLTbaQxIJLSMKNmM";
 var DOMINIONS_SHEET_NAME = "Dominions";
 
+// Keyword definitions come from the Player Handbook's "Glossary of Terms" section,
+// read live from the Doc by ID (the web app executes as its owner, who can open it).
+// The handbook's file name carries its version, so a new version that is a new Doc
+// needs this ID changed: it is in the Doc's URL, and in the Source Exporter's manifest.
+var HANDBOOK_DOC_ID = "1V_npWCsHtaGV5ha6OXksES58gnbLmBZEUfNmIJQPKsE";
+var GLOSSARY_HEADING = "Glossary of Terms";
+
 // Tab icon for the web app. This has to be set here rather than with a
 // <link rel="icon"> in CastRecruiter.html: Apps Script serves the page inside an
 // iframe on a Google-owned top-level document, so the HTML's own icon never reaches
@@ -423,7 +430,9 @@ function getCardDatabase() {
     units: [],
     specials: [],
     dominionRules: {},
-    dominionRulesError: ""
+    dominionRulesError: "",
+    glossary: {},
+    glossaryError: ""
   };
 
   var seenDominions = {};
@@ -441,6 +450,14 @@ function getCardDatabase() {
   } catch (err) {
     console.warn("Dominion rules unavailable: " + err.message);
     db.dominionRulesError = String(err.message || err);
+  }
+
+  // Same for the keyword glossary: without it keywords simply aren't tappable.
+  try {
+    db.glossary = getGlossary();
+  } catch (err) {
+    console.warn("Glossary unavailable: " + err.message);
+    db.glossaryError = String(err.message || err);
   }
 
   // Champion links are scoped within the dominion — every dominion has exactly
@@ -596,6 +613,55 @@ function getDominionRules(castDominions) {
     rules[dominion] = { rules: cellAt(1, c), entries: entries };
   });
   return rules;
+}
+
+/**
+ * Reads the handbook's glossary and returns its keyword entries as
+ * { <KEYWORD>: { term, text } }, e.g. LETHAL: { term: "LETHAL(+X)", text: "When this ..." }.
+ *
+ * Only ALL-CAPS terms are keywords (mechanic shorthands such as LETHAL(+X) or
+ * STRIKE[(X)]); the plain-case terms (Attack, Ally, Status...) are left out. Each
+ * entry is "Term: Flavour opener. Rules text."; the flavour opener, always the first
+ * sentence, is dropped, so `text` is the rules alone. The section runs from the
+ * GLOSSARY_HEADING heading to the next heading.
+ */
+function getGlossary() {
+  var body = DocumentApp.openById(HANDBOOK_DOC_ID).getBody();
+  var paragraphs = body.getParagraphs();
+  var glossary = {};
+  var inGlossary = false;
+  var found = false;
+  paragraphs.forEach(function (paragraph) {
+    var text = paragraph.getText().trim();
+    if (paragraph.getHeading() !== DocumentApp.ParagraphHeading.NORMAL) {
+      inGlossary = text === GLOSSARY_HEADING;
+      found = found || inGlossary;
+      return;
+    }
+    if (!inGlossary || !text) return;
+    var entry = /^([A-Z][A-Z-]+)(\[?\([^)]*\)\]?)?\s*:\s*(.+)$/.exec(text);
+    if (!entry) return;
+    glossary[entry[1]] = {
+      term: entry[1] + (entry[2] || ""),
+      text: entry[3].replace(/^[^.]*\.\s+/, "")
+    };
+  });
+  if (!found) {
+    throw new Error('No "' + GLOSSARY_HEADING + '" heading in the handbook Doc.');
+  }
+  return glossary;
+}
+
+/**
+ * Editor check: run this once after a push (it also asks for permission to read the
+ * handbook Doc). The log lists every keyword the web app will define.
+ */
+function logGlossary() {
+  var glossary = getGlossary();
+  Logger.log("Glossary (main.gs, keyword-glossary build): " + Object.keys(glossary).length + " keywords");
+  Object.keys(glossary).sort().forEach(function (key) {
+    Logger.log("  " + glossary[key].term + ": " + glossary[key].text);
+  });
 }
 
 /**
