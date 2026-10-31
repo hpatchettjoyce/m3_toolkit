@@ -72,6 +72,7 @@ PAIRS = [
     ("--success-colour", "--panel-bg",   TEXT, "ether/specials tracker, within budget"),
     ("--warning-colour", "--panel-bg",   TEXT, "ether/specials tracker, over budget"),
     ("--warning-colour", "--warning-bg", TEXT, ".warning-box copy"),
+    ("--warning-bg",     "--warning-colour", TEXT, ".card-qty-clear X on hover"),
 
     # --- boundaries and cues ---
     ("--field-border-colour", "--field-bg",   UI, "select / textarea outline"),

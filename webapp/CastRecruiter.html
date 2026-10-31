@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Monumentum Cast Recruiter</title>
-    <!-- Brand fonts (Monumentum/05_AI Agent Support/01_Context/Brand_Style.md): Cinzel for
+    <!-- Brand fonts (Monumentum/03_Visual Assets/03_Branding/Brand_Style.md): Cinzel for
          display, Montserrat for web body text. Both are OFL Google
          Fonts, so they can be linked rather than licensed, and share one request. Everything
          below falls back to a real stack if the request fails -- see --font-display/-body. -->
@@ -400,6 +400,32 @@
             box-sizing: border-box;
             -webkit-appearance: none;
             margin: 0;
+        }
+
+        /* Clear button beside a non-zero quantity: wipes the familiar to 0 in one click,
+           since a full ether budget stops the card click cycling it back round. */
+        .card-qty-row {
+            display: flex;
+            align-items: center;
+        }
+        .card-qty-clear {
+            width: 24px;
+            height: 24px;
+            margin-left: 6px;
+            padding: 0;
+            border-radius: 50%;
+            border: 1px solid var(--warning-border);
+            background-color: var(--warning-bg);
+            color: var(--warning-colour);
+            font-size: 1rem;
+            font-weight: bold;
+            line-height: 1;
+            cursor: pointer;
+        }
+        .card-qty-clear:hover,
+        .card-qty-clear:focus-visible {
+            background-color: var(--warning-colour);
+            color: var(--warning-bg);
         }
 
         /* Hide spinner controls in input number fields */
@@ -1783,6 +1809,27 @@
             qtyLabel.className = 'card-qty';
             qtyLabel.append('Qty', qtyInput);
 
+            // Red X beside a non-zero quantity: clears the familiar whatever its count.
+            let qtyControl = qtyLabel;
+            if (qty > 0) {
+                const clearBtn = document.createElement('button');
+                clearBtn.type = 'button';
+                clearBtn.className = 'card-qty-clear';
+                clearBtn.textContent = '\u00D7';
+                clearBtn.title = `Remove all ${item.name}`;
+                clearBtn.setAttribute('aria-label', `Remove all ${item.name}`);
+                clearBtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    delete state.familiars[item.id];
+                    cleanUpTalismanAttachments(item.id);
+                    renderAllUnits();
+                    updateTrackers();
+                });
+                qtyControl = document.createElement('div');
+                qtyControl.className = 'card-qty-row';
+                qtyControl.append(qtyLabel, clearBtn);
+            }
+
             cardEl.addEventListener('click', () => {
                 let nextQty = (qty + 1) % 4; // Cycles: 0 -> 1 -> 2 -> 3 -> 0
 
@@ -1805,7 +1852,7 @@
                 updateTrackers();
             });
 
-            els.familiarsGrid.insertBefore(buildCardTile(item, cardEl, qtyLabel), els.talismansGrid);
+            els.familiarsGrid.insertBefore(buildCardTile(item, cardEl, qtyControl), els.talismansGrid);
         });
     }
 
